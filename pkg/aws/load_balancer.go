@@ -28,7 +28,7 @@ func (a *AWS) findNetworkLoadBalancer(ctx context.Context, name string) (*elbv2.
 	return nil, fmt.Errorf("Could not find LoadBalancer: %s", name)
 }
 
-func getLBNameFromHostname(hostname string) (string, string) {
+func GetLBNameFromHostname(hostname string) (string, string) {
 	slice := strings.Split(hostname, ".")
 	subdomain := slice[0]
 	region := slice[2]

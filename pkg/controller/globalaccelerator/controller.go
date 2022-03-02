@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
@@ -30,7 +31,6 @@ const dataConfigMap = "aws-global-accelerator-controller-data"
 type GlobalAcceleratorConfig struct {
 	Workers   int
 	Namespace string
-	Region    string
 }
 
 type GlobalAcceleratorController struct {
@@ -41,8 +41,6 @@ type GlobalAcceleratorController struct {
 	workqueue workqueue.RateLimitingInterface
 
 	namespace string
-
-	cloud cloudaws.AWS
 
 	recorder record.EventRecorder
 }
@@ -61,7 +59,6 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 		kubeclient: kubeclient,
 		recorder:   recorder,
 		workqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
-		cloud:      *cloudaws.NewAWS(config.Region),
 		namespace:  config.Namespace,
 	}
 	{
@@ -80,8 +77,10 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 
 func (c *GlobalAcceleratorController) addSereviceNotification(obj interface{}) {
 	svc := obj.(*corev1.Service)
-	klog.V(4).Infof("Service %s/%s is created", svc.Namespace, svc.Name)
-	c.enqueueService(svc)
+	if wasLoadBalancerService(svc) {
+		klog.V(4).Infof("Service %s/%s is created", svc.Namespace, svc.Name)
+		c.enqueueService(svc)
+	}
 }
 
 func (c *GlobalAcceleratorController) updateServiceNotification(old, new interface{}) {
@@ -89,8 +88,10 @@ func (c *GlobalAcceleratorController) updateServiceNotification(old, new interfa
 		return
 	}
 	svc := new.(*corev1.Service)
-	klog.V(4).Infof("Service %s/%s is updated", svc.Namespace, svc.Name)
-	c.enqueueService(svc)
+	if wasLoadBalancerService(svc) {
+		klog.V(4).Infof("Service %s/%s is updated", svc.Namespace, svc.Name)
+		c.enqueueService(svc)
+	}
 }
 
 func (c *GlobalAcceleratorController) deleteServiceNotification(obj interface{}) {
@@ -108,8 +109,11 @@ func (c *GlobalAcceleratorController) deleteServiceNotification(obj interface{})
 		}
 		klog.V(4).Infof("Recovered deleted object %q from tombstone", svc.Name)
 	}
-	klog.V(4).Infof("Deleting Service %s/%s", svc.Namespace, svc.Name)
-	c.enqueueService(svc)
+	if wasLoadBalancerService(svc) {
+		klog.V(4).Infof("Deleting Service %s/%s", svc.Namespace, svc.Name)
+		c.enqueueService(svc)
+	}
+
 }
 
 func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
@@ -232,14 +236,43 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 
 	for i := range svc.Status.LoadBalancer.Ingress {
 		ingress := svc.Status.LoadBalancer.Ingress[i]
-		acceleratorArn, err := c.cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, correspondence)
+		provider, err := detectCloudProvider(ingress.Hostname)
 		if err != nil {
-			return err
+			klog.Error(err)
+			continue
 		}
-		if acceleratorArn != nil {
-			correspondence[ingress.Hostname] = *acceleratorArn
+		switch provider {
+		case "aws":
+			// Get load balancer name and region from hostname
+			name, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
+			cloud := cloudaws.NewAWS(region)
+			acceleratorArn, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence)
+			if err != nil {
+				return err
+			}
+			if acceleratorArn != nil {
+				correspondence[ingress.Hostname] = *acceleratorArn
+			}
+		default:
+			klog.Warningf("Not implemented for %s", provider)
+			continue
 		}
 	}
 
 	return c.updateConfigMap(ctx, correspondence)
+}
+
+func detectCloudProvider(hostname string) (string, error) {
+	parts := strings.Split(hostname, ".")
+	domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
+	switch domain {
+	case "amazonaws.com":
+		return "aws", nil
+	default:
+		return "", fmt.Errorf("Unknown cloud provider: %s", domain)
+	}
+}
+
+func wasLoadBalancerService(svc *corev1.Service) bool {
+	return svc.Spec.Type == corev1.ServiceTypeLoadBalancer
 }

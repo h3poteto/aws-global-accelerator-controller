@@ -19,6 +19,7 @@ func NewAWS(region string) *AWS {
 		SharedConfigState: session.SharedConfigEnable,
 	}))
 	lb := elbv2.New(sess, aws.NewConfig().WithRegion(region))
+	// Global Accelerator requires us-west-2 region, because it is global object.
 	ga := globalaccelerator.New(sess, aws.NewConfig().WithRegion("us-west-2"))
 	return &AWS{
 		lb: lb,

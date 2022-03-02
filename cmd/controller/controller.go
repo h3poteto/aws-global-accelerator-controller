@@ -16,7 +16,6 @@ import (
 
 type options struct {
 	workers int
-	region  string
 }
 
 func ControllerCmd() *cobra.Command {
@@ -28,7 +27,6 @@ func ControllerCmd() *cobra.Command {
 	}
 	flags := cmd.Flags()
 	flags.IntVarP(&o.workers, "workers", "w", 1, "Concurrent workers number for controller.")
-	flags.StringVar(&o.region, "region", "us-east-1", "AWS region")
 
 	cmd.PersistentFlags().String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	cmd.PersistentFlags().String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
@@ -58,7 +56,6 @@ func (o *options) run(cmd *cobra.Command, args []string) {
 		GlobalAccelerator: &globalaccelerator.GlobalAcceleratorConfig{
 			Workers:   o.workers,
 			Namespace: ns,
-			Region:    o.region,
 		},
 	}
 
