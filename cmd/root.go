@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"flag"
+
 	"github.com/h3poteto/aws-global-accelerator-controller/cmd/controller"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 )
 
 // RootCmd is cobra command.
@@ -14,7 +17,10 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
+	klog.InitFlags(flag.CommandLine)
+
 	cobra.OnInitialize()
+	RootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 	RootCmd.AddCommand(
 		controller.ControllerCmd(),
 	)
