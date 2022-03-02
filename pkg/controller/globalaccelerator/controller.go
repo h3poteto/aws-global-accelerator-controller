@@ -3,6 +3,7 @@ package globalaccelerator
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
@@ -10,7 +11,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
@@ -65,20 +65,57 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 		controller.serviceLister = f.Lister()
 		controller.serviceSynced = f.Informer().HasSynced
 		f.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.handleService,
-			UpdateFunc: func(old, new interface{}) {
-				newSvc := new.(*corev1.Service)
-				oldSvc := old.(*corev1.Service)
-				if newSvc.ResourceVersion == oldSvc.ResourceVersion {
-					return
-				}
-				controller.handleService(new)
-			},
-			DeleteFunc: controller.handleService,
+			AddFunc:    controller.addSereviceNotification,
+			UpdateFunc: controller.updateServiceNotification,
+			DeleteFunc: controller.deleteServiceNotification,
 		})
 
 	}
 	return controller
+}
+
+func (c *GlobalAcceleratorController) addSereviceNotification(obj interface{}) {
+	svc := obj.(*corev1.Service)
+	klog.V(4).Infof("Service %s/%s is created", svc.Namespace, svc.Name)
+	c.enqueueService(svc)
+}
+
+func (c *GlobalAcceleratorController) updateServiceNotification(old, new interface{}) {
+	if reflect.DeepEqual(old, new) {
+		return
+	}
+	svc := new.(*corev1.Service)
+	klog.V(4).Infof("Service %s/%s is updated", svc.Namespace, svc.Name)
+	c.enqueueService(svc)
+}
+
+func (c *GlobalAcceleratorController) deleteServiceNotification(obj interface{}) {
+	svc, ok := obj.(*corev1.Service)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
+			return
+		}
+		svc, ok = tombstone.Obj.(*corev1.Service)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
+			return
+		}
+		klog.V(4).Infof("Recovered deleted object %q from tombstone", svc.Name)
+	}
+	klog.V(4).Infof("Deleting Service %s/%s", svc.Namespace, svc.Name)
+	c.enqueueService(svc)
+}
+
+func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
+	var key string
+	var err error
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	c.workqueue.AddRateLimited(key)
 }
 
 func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{}) error {
@@ -165,39 +202,6 @@ func (c *GlobalAcceleratorController) syncHandler(key string) error {
 	}
 
 	return err
-}
-
-func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
-	var key string
-	var err error
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-	c.workqueue.AddRateLimited(key)
-}
-
-func (c *GlobalAcceleratorController) handleService(obj interface{}) {
-	var object metav1.Object
-	var ok bool
-	if object, ok = obj.(metav1.Object); !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
-			return
-		}
-		object, ok = tombstone.Obj.(metav1.Object)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
-			return
-		}
-		klog.V(4).Infof("Recovered deleted object '%s' from tombstone", object.GetName())
-	}
-	klog.V(4).Infof("Processing object: %s", object.GetName())
-	svc := obj.(*corev1.Service)
-	if svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
-		c.enqueueService(svc)
-	}
 }
 
 func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) error {
