@@ -17,7 +17,7 @@ func NewManager() *manager {
 	return &manager{}
 }
 
-type InitFunc func(kubeClient kubernetes.Interface, informerFactory informers.SharedInformerFactory, stopCh <-chan struct{}, done func()) (bool, error)
+type InitFunc func(kubeClient kubernetes.Interface, informerFactory informers.SharedInformerFactory, namespace, region string, stopCh <-chan struct{}, done func()) (bool, error)
 
 func NewControllerInitializers() map[string]InitFunc {
 	controllers := map[string]InitFunc{}
@@ -25,7 +25,7 @@ func NewControllerInitializers() map[string]InitFunc {
 	return controllers
 }
 
-func (m *manager) Run(ctx context.Context, clientConfig *rest.Config, stopCh <-chan struct{}) error {
+func (m *manager) Run(ctx context.Context, clientConfig *rest.Config, namespace, region string, stopCh <-chan struct{}) error {
 	kubeClient, err := kubernetes.NewForConfig(clientConfig)
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func (m *manager) Run(ctx context.Context, clientConfig *rest.Config, stopCh <-c
 	for name, initFn := range controllers {
 		wg.Add(1)
 		klog.Infof("Starting %s", name)
-		started, err := initFn(kubeClient, informerFactory, stopCh, wg.Done)
+		started, err := initFn(kubeClient, informerFactory, namespace, region, stopCh, wg.Done)
 		if err != nil {
 			return err
 		}

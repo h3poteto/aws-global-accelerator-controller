@@ -1,10 +1,16 @@
 package globalaccelerator
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/aws"
+
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
@@ -19,6 +25,7 @@ import (
 )
 
 const controllerAgentName = "global-accelerator-controller"
+const dataConfigMap = "aws-global-accelerator-controller-data"
 
 type GlobalAcceleratorController struct {
 	kubeclient    kubernetes.Interface
@@ -27,10 +34,14 @@ type GlobalAcceleratorController struct {
 
 	workqueue workqueue.RateLimitingInterface
 
+	namespace string
+
+	cloud cloudaws.AWS
+
 	recorder record.EventRecorder
 }
 
-func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFactory informers.SharedInformerFactory) *GlobalAcceleratorController {
+func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFactory informers.SharedInformerFactory, namespace, region string) *GlobalAcceleratorController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclient.CoreV1().Events("")})
@@ -40,11 +51,26 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 		kubeclient: kubeclient,
 		recorder:   recorder,
 		workqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
+		cloud:      *cloudaws.NewAWS(region),
+		namespace:  namespace,
 	}
 	{
 		f := informerFactory.Core().V1().Services()
 		controller.serviceLister = f.Lister()
 		controller.serviceSynced = f.Informer().HasSynced
+		f.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.handleService,
+			UpdateFunc: func(old, new interface{}) {
+				newSvc := new.(*corev1.Service)
+				oldSvc := old.(*corev1.Service)
+				if newSvc.ResourceVersion == oldSvc.ResourceVersion {
+					return
+				}
+				controller.handleService(new)
+			},
+			DeleteFunc: controller.handleService,
+		})
+
 	}
 	return controller
 }
@@ -111,6 +137,95 @@ func (c *GlobalAcceleratorController) processNextWorkItem() bool {
 }
 
 func (c *GlobalAcceleratorController) syncHandler(key string) error {
-	// TODO: Reconcile body
+	startTime := time.Now()
+	defer func() {
+		klog.V(4).Infof("Finished syncing service %q (%v)", key, time.Since(startTime))
+	}()
+	ctx := context.Background()
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		return nil
+	}
+
+	svc, err := c.serviceLister.Services(ns).Get(name)
+	switch {
+	case kerrors.IsNotFound(err):
+		err = c.processServiceDelete(ctx, key)
+	case err != nil:
+		utilruntime.HandleError(fmt.Errorf("Unable to retrieve service %v from store: %v", key, err))
+	default:
+		err = c.processServiceCreateOrUpdate(ctx, svc)
+	}
+
+	return err
+}
+
+func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
+	var key string
+	var err error
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	c.workqueue.AddRateLimited(key)
+}
+
+func (c *GlobalAcceleratorController) handleService(obj interface{}) {
+	var object metav1.Object
+	var ok bool
+	if object, ok = obj.(metav1.Object); !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
+			return
+		}
+		object, ok = tombstone.Obj.(metav1.Object)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
+			return
+		}
+		klog.V(4).Infof("Recovered deleted object '%s' from tombstone", object.GetName())
+	}
+	klog.V(4).Infof("Processing object: %s", object.GetName())
+	svc := obj.(*corev1.Service)
+	if svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
+		c.enqueueService(svc)
+	}
+}
+
+func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) error {
+	klog.Infof("%v has been deleted", key)
+	// TODO:
 	return nil
+}
+
+func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, svc *corev1.Service) error {
+	if _, ok := svc.Annotations[apis.EnableAWSGlobalAcceleratorAnnotation]; !ok {
+		klog.Infof("%s/%s does not have the annotation, so skip it", svc.Namespace, svc.Name)
+		return nil
+	}
+	if len(svc.Status.LoadBalancer.Ingress) < 1 {
+		klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", svc.Namespace, svc.Name)
+		return nil
+	}
+
+	correspondence, err := c.prepareConfigMap(ctx)
+	if err != nil {
+		klog.Errorf("Failed to prepare ConfigMap: %v", err)
+		return err
+	}
+
+	for i := range svc.Status.LoadBalancer.Ingress {
+		ingress := svc.Status.LoadBalancer.Ingress[i]
+		acceleratorArn, err := c.cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, correspondence)
+		if err != nil {
+			return err
+		}
+		if acceleratorArn != nil {
+			correspondence[ingress.Hostname] = *acceleratorArn
+		}
+	}
+
+	return c.updateConfigMap(ctx, correspondence)
 }
