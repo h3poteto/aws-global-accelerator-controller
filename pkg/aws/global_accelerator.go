@@ -11,10 +11,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func (a *AWS) EnsureGlobalAccelerator(ctx context.Context, svc *corev1.Service, ingress *corev1.LoadBalancerIngress, correspondence map[string]string) (*string, error) {
-	// Find LB from ingress
-	name, region := getLBNameFromHostname(ingress.Hostname)
-	lb, err := a.findNetworkLoadBalancer(ctx, name)
+func (a *AWS) EnsureGlobalAccelerator(ctx context.Context, svc *corev1.Service, ingress *corev1.LoadBalancerIngress, lbName, region string, correspondence map[string]string) (*string, error) {
+	lb, err := a.findNetworkLoadBalancer(ctx, lbName)
 	if err != nil {
 		return nil, err
 	}
