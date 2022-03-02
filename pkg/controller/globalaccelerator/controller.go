@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
-	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/aws"
+	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
