@@ -27,6 +27,12 @@ import (
 const controllerAgentName = "global-accelerator-controller"
 const dataConfigMap = "aws-global-accelerator-controller-data"
 
+type GlobalAcceleratorConfig struct {
+	Workers   int
+	Namespace string
+	Region    string
+}
+
 type GlobalAcceleratorController struct {
 	kubeclient    kubernetes.Interface
 	serviceLister corelisters.ServiceLister
@@ -41,7 +47,7 @@ type GlobalAcceleratorController struct {
 	recorder record.EventRecorder
 }
 
-func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFactory informers.SharedInformerFactory, namespace, region string) *GlobalAcceleratorController {
+func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFactory informers.SharedInformerFactory, config *GlobalAcceleratorConfig) *GlobalAcceleratorController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclient.CoreV1().Events("")})
@@ -51,8 +57,8 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 		kubeclient: kubeclient,
 		recorder:   recorder,
 		workqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
-		cloud:      *cloudaws.NewAWS(region),
-		namespace:  namespace,
+		cloud:      *cloudaws.NewAWS(config.Region),
+		namespace:  config.Namespace,
 	}
 	{
 		f := informerFactory.Core().V1().Services()

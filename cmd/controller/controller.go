@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/globalaccelerator"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/leaderelection"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/manager"
 	"github.com/spf13/cobra"
@@ -53,11 +54,19 @@ func (o *options) run(cmd *cobra.Command, args []string) {
 	if ns == "" {
 		ns = "default"
 	}
+	config := manager.ControllerConfig{
+		GlobalAccelerator: &globalaccelerator.GlobalAcceleratorConfig{
+			Workers:   o.workers,
+			Namespace: ns,
+			Region:    o.region,
+		},
+	}
+
 	le := leaderelection.NewLeaderElection("aws-global-accelerator-controller", ns)
 	ctx := context.Background()
 	err = le.Run(ctx, cfg, func(ctx context.Context, clientConfig *rest.Config, stopCh <-chan struct{}) {
 		m := manager.NewManager()
-		if err := m.Run(ctx, clientConfig, ns, o.region, stopCh); err != nil {
+		if err := m.Run(ctx, clientConfig, &config, stopCh); err != nil {
 			klog.Fatalf("Error running controller: %v", err)
 		}
 	})

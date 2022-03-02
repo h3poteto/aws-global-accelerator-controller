@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/globalaccelerator"
+
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -13,11 +15,15 @@ import (
 
 type manager struct{}
 
+type ControllerConfig struct {
+	GlobalAccelerator *globalaccelerator.GlobalAcceleratorConfig
+}
+
 func NewManager() *manager {
 	return &manager{}
 }
 
-type InitFunc func(kubeClient kubernetes.Interface, informerFactory informers.SharedInformerFactory, namespace, region string, stopCh <-chan struct{}, done func()) (bool, error)
+type InitFunc func(kubeClient kubernetes.Interface, informerFactory informers.SharedInformerFactory, config *ControllerConfig, stopCh <-chan struct{}, done func()) (bool, error)
 
 func NewControllerInitializers() map[string]InitFunc {
 	controllers := map[string]InitFunc{}
@@ -25,7 +31,7 @@ func NewControllerInitializers() map[string]InitFunc {
 	return controllers
 }
 
-func (m *manager) Run(ctx context.Context, clientConfig *rest.Config, namespace, region string, stopCh <-chan struct{}) error {
+func (m *manager) Run(ctx context.Context, clientConfig *rest.Config, config *ControllerConfig, stopCh <-chan struct{}) error {
 	kubeClient, err := kubernetes.NewForConfig(clientConfig)
 	if err != nil {
 		return err
@@ -37,7 +43,7 @@ func (m *manager) Run(ctx context.Context, clientConfig *rest.Config, namespace,
 	for name, initFn := range controllers {
 		wg.Add(1)
 		klog.Infof("Starting %s", name)
-		started, err := initFn(kubeClient, informerFactory, namespace, region, stopCh, wg.Done)
+		started, err := initFn(kubeClient, informerFactory, config, stopCh, wg.Done)
 		if err != nil {
 			return err
 		}

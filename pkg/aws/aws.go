@@ -25,8 +25,3 @@ func NewAWS(region string) *AWS {
 		ga: ga,
 	}
 }
-
-func findRegion() string {
-	// TODO
-	return "ap-northeast-1"
-}
