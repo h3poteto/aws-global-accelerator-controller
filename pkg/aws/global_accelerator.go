@@ -41,7 +41,8 @@ func (a *AWS) EnsureGlobalAccelerator(ctx context.Context, svc *corev1.Service, 
 		return createdArn, nil
 	} else {
 		// Update Global Accelerator
-		klog.Infof("accelerator: %+v", accelerator)
+		// TODO
+		klog.Infof("accelerator: %s", *accelerator.AcceleratorArn)
 		return accelerator.AcceleratorArn, nil
 	}
 }
@@ -73,6 +74,7 @@ func (a *AWS) createGlobalAccelerator(ctx context.Context, lb *elbv2.LoadBalance
 	if err != nil {
 		return nil, err
 	}
+	klog.Infof("Global Accelerator is created: %s", *acceleratorRes.Accelerator.AcceleratorArn)
 
 	var ports []*globalaccelerator.PortRange
 	protocol := "TCP"
@@ -93,6 +95,7 @@ func (a *AWS) createGlobalAccelerator(ctx context.Context, lb *elbv2.LoadBalance
 	if err != nil {
 		return acceleratorRes.Accelerator.AcceleratorArn, err
 	}
+	klog.Infof("Listener is created: %s", *listenerRes.Listener.ListenerArn)
 
 	endpointInput := &globalaccelerator.CreateEndpointGroupInput{
 		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{
@@ -103,10 +106,12 @@ func (a *AWS) createGlobalAccelerator(ctx context.Context, lb *elbv2.LoadBalance
 		EndpointGroupRegion: aws.String(region),
 		ListenerArn:         listenerRes.Listener.ListenerArn,
 	}
-	_, err = a.ga.CreateEndpointGroupWithContext(ctx, endpointInput)
+	endpointRes, err := a.ga.CreateEndpointGroupWithContext(ctx, endpointInput)
 	if err != nil {
 		return acceleratorRes.Accelerator.AcceleratorArn, err
 	}
+	klog.Infof("EndpointGroup is created: %s", *endpointRes.EndpointGroup.EndpointGroupArn)
+
 	return acceleratorRes.Accelerator.AcceleratorArn, nil
 }
 
