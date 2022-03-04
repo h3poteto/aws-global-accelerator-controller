@@ -3,7 +3,6 @@ package globalaccelerator
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -84,9 +83,12 @@ func (c *GlobalAcceleratorController) addSereviceNotification(obj interface{}) {
 }
 
 func (c *GlobalAcceleratorController) updateServiceNotification(old, new interface{}) {
-	if reflect.DeepEqual(old, new) {
-		return
-	}
+	// TODO: Now we don't have any methods to retry even if some errors occur.
+	// So call reconcile when resyncing. If we implement ErrorWithRetry to retry when error,
+	// please uncomment these lines.
+	// if reflect.DeepEqual(old, new) {
+	// 	return
+	// }
 	svc := new.(*corev1.Service)
 	if wasLoadBalancerService(svc) {
 		klog.V(4).Infof("Service %s/%s is updated", svc.Namespace, svc.Name)
@@ -214,8 +216,36 @@ func (c *GlobalAcceleratorController) syncHandler(key string) error {
 
 func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) error {
 	klog.Infof("%v has been deleted", key)
-	// TODO:
-	return nil
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		return nil
+	}
+
+	correspondence, err := c.prepareCorrespondence(ctx)
+	if err != nil {
+		klog.Errorf("Failed to prepare ConfigMap: %v", err)
+		return err
+	}
+
+	cloud := cloudaws.NewAWS("us-west-2")
+	accelerators, err := cloud.ListGlobalAcceleratorByTag(ctx, ns+"-"+name)
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+	for _, accelerator := range accelerators {
+		if err := cloud.CleanupGlobalAccelerator(ctx, *accelerator.AcceleratorArn); err != nil {
+			klog.Error(err)
+			return err
+		}
+		for key, value := range correspondence {
+			if value == *accelerator.AcceleratorArn {
+				delete(correspondence, key)
+			}
+		}
+	}
+	return c.updateCorrespondence(ctx, correspondence)
 }
 
 func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, svc *corev1.Service) error {
@@ -236,6 +266,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		for i := range svc.Status.LoadBalancer.Ingress {
 			ingress := svc.Status.LoadBalancer.Ingress[i]
 			if acceleratorArn, ok := correspondence[ingress.Hostname]; ok {
+				klog.Infof("Service %s/%s does not have annotation, but it is recorded in configmaps: %s", svc.Namespace, svc.Name, ingress.Hostname)
 				provider, err := detectCloudProvider(ingress.Hostname)
 				if err != nil {
 					klog.Error(err)

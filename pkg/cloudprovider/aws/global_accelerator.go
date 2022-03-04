@@ -27,6 +27,10 @@ func (a *AWS) EnsureGlobalAccelerator(
 	if *lb.DNSName != ingress.Hostname {
 		return nil, fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
 	}
+	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
+		return nil, fmt.Errorf("LoadBalancer %s is not Active", *lb.LoadBalancerArn)
+	}
+
 	klog.Infof("LoadBalancer is %s", *lb.LoadBalancerArn)
 	var accelerator *globalaccelerator.Accelerator
 	// Confirm Global Accelerator
@@ -39,7 +43,9 @@ func (a *AWS) EnsureGlobalAccelerator(
 		klog.Infof("Creating Global Accelerator for %s", *lb.DNSName)
 		createdArn, err := a.createGlobalAccelerator(ctx, lb, svc, region)
 		if err != nil {
+			klog.Error(err)
 			if createdArn != nil {
+				klog.Warningf("Failed to create Global Accelerator, but some resources are created, so cleanup %s", *createdArn)
 				a.CleanupGlobalAccelerator(ctx, *createdArn)
 			}
 			return nil, err
@@ -196,6 +202,27 @@ func endpointContainsLB(endpoint *globalaccelerator.EndpointGroup, lb *elbv2.Loa
 	return false
 }
 
+func (a *AWS) ListGlobalAcceleratorByTag(ctx context.Context, tagValue string) ([]*globalaccelerator.Accelerator, error) {
+	accelerators, err := a.listAccelerator(ctx)
+	if err != nil {
+		klog.Error(err)
+		return nil, err
+	}
+	res := []*globalaccelerator.Accelerator{}
+	for _, accelerator := range accelerators {
+		tags, err := a.listTagsForAccelerator(ctx, *accelerator.AcceleratorArn)
+		if err != nil {
+			return nil, err
+		}
+		for _, t := range tags {
+			if *t.Key == "aws-global-accelerator-controller-managed" && *t.Value == tagValue {
+				res = append(res, accelerator)
+			}
+		}
+	}
+	return res, nil
+}
+
 //---------------------------------
 // Accelerator methods
 //---------------------------------
@@ -208,6 +235,28 @@ func (a *AWS) getAccelerator(ctx context.Context, arn string) (*globalaccelerato
 		return nil, err
 	}
 	return res.Accelerator, nil
+}
+
+func (a *AWS) listAccelerator(ctx context.Context) ([]*globalaccelerator.Accelerator, error) {
+	input := &globalaccelerator.ListAcceleratorsInput{
+		MaxResults: aws.Int64(100),
+	}
+	res, err := a.ga.ListAcceleratorsWithContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return res.Accelerators, nil
+}
+
+func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]*globalaccelerator.Tag, error) {
+	input := &globalaccelerator.ListTagsForResourceInput{
+		ResourceArn: aws.String(arn),
+	}
+	res, err := a.ga.ListTagsForResourceWithContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return res.Tags, nil
 }
 
 func (a *AWS) createAccelerator(ctx context.Context, name string) (*globalaccelerator.Accelerator, error) {
