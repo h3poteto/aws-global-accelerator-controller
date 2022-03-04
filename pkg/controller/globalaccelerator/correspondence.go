@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (c *GlobalAcceleratorController) prepareConfigMap(ctx context.Context) (map[string]string, error) {
+func (c *GlobalAcceleratorController) prepareCorrespondence(ctx context.Context) (map[string]string, error) {
 	cm, err := c.kubeclient.CoreV1().ConfigMaps(c.namespace).Get(ctx, dataConfigMap, metav1.GetOptions{})
 	if kerrors.IsNotFound(err) {
 		return make(map[string]string), nil
@@ -19,13 +19,16 @@ func (c *GlobalAcceleratorController) prepareConfigMap(ctx context.Context) (map
 }
 
 func parseCorrespondence(cm *corev1.ConfigMap) (map[string]string, error) {
+	if cm.Data == nil {
+		return make(map[string]string), nil
+	}
 	return cm.Data, nil
 }
 
-func (c *GlobalAcceleratorController) updateConfigMap(ctx context.Context, correspondence map[string]string) error {
+func (c *GlobalAcceleratorController) updateCorrespondence(ctx context.Context, correspondence map[string]string) error {
 	cm, err := c.kubeclient.CoreV1().ConfigMaps(c.namespace).Get(ctx, dataConfigMap, metav1.GetOptions{})
 	if kerrors.IsNotFound(err) {
-		if _, err := c.createConfigMap(ctx, correspondence); err != nil {
+		if _, err := c.createCorrespondence(ctx, correspondence); err != nil {
 			return err
 		}
 		return nil
@@ -37,7 +40,7 @@ func (c *GlobalAcceleratorController) updateConfigMap(ctx context.Context, corre
 	return err
 }
 
-func (c *GlobalAcceleratorController) createConfigMap(ctx context.Context, correspondence map[string]string) (*corev1.ConfigMap, error) {
+func (c *GlobalAcceleratorController) createCorrespondence(ctx context.Context, correspondence map[string]string) (*corev1.ConfigMap, error) {
 	cm := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dataConfigMap,
