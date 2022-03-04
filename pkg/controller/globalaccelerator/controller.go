@@ -3,14 +3,16 @@ package globalaccelerator
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
@@ -86,9 +88,9 @@ func (c *GlobalAcceleratorController) updateServiceNotification(old, new interfa
 	// TODO: Now we don't have any methods to retry even if some errors occur.
 	// So call reconcile when resyncing. If we implement ErrorWithRetry to retry when error,
 	// please uncomment these lines.
-	// if reflect.DeepEqual(old, new) {
-	// 	return
-	// }
+	if reflect.DeepEqual(old, new) {
+		return
+	}
 	svc := new.(*corev1.Service)
 	if wasLoadBalancerService(svc) {
 		klog.V(4).Infof("Service %s/%s is updated", svc.Namespace, svc.Name)
@@ -152,66 +154,17 @@ func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{
 }
 
 func (c *GlobalAcceleratorController) runWorker() {
-	for c.processNextWorkItem() {
+	for reconcile.ProcessNextWorkItem(c.workqueue, c.keyToObject, c.processServiceDelete, c.processServiceCreateOrUpdate) {
 	}
 }
 
-func (c *GlobalAcceleratorController) processNextWorkItem() bool {
-	obj, shutdown := c.workqueue.Get()
-
-	if shutdown {
-		return false
-	}
-
-	err := func(obj interface{}) error {
-		defer c.workqueue.Done(obj)
-		var key string
-		var ok bool
-
-		if key, ok = obj.(string); !ok {
-			c.workqueue.Forget(obj)
-			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
-			return nil
-		}
-		if err := c.syncHandler(key); err != nil {
-			return fmt.Errorf("error syncing '%s': %s", key, err.Error())
-		}
-		c.workqueue.Forget(obj)
-		klog.Infof("Successfully synced '%s'", key)
-		return nil
-	}(obj)
-
-	if err != nil {
-		utilruntime.HandleError(err)
-		return true
-	}
-
-	return true
-}
-
-func (c *GlobalAcceleratorController) syncHandler(key string) error {
-	startTime := time.Now()
-	defer func() {
-		klog.V(4).Infof("Finished syncing service %q (%v)", key, time.Since(startTime))
-	}()
-	ctx := context.Background()
+func (c *GlobalAcceleratorController) keyToObject(key string) (runtime.Object, error) {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
-		return nil
+		return nil, fmt.Errorf("invalid resource key: %s", key)
 	}
 
-	svc, err := c.serviceLister.Services(ns).Get(name)
-	switch {
-	case kerrors.IsNotFound(err):
-		err = c.processServiceDelete(ctx, key)
-	case err != nil:
-		utilruntime.HandleError(fmt.Errorf("Unable to retrieve service %v from store: %v", key, err))
-	default:
-		err = c.processServiceCreateOrUpdate(ctx, svc)
-	}
-
-	return err
+	return c.serviceLister.Services(ns).Get(name)
 }
 
 func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) error {
@@ -248,7 +201,11 @@ func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, 
 	return c.updateCorrespondence(ctx, correspondence)
 }
 
-func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, svc *corev1.Service) error {
+func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, obj runtime.Object) error {
+	svc, ok := obj.(*corev1.Service)
+	if !ok {
+		return fmt.Errorf("object is not Service, it is %T", obj)
+	}
 	if len(svc.Status.LoadBalancer.Ingress) < 1 {
 		klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", svc.Namespace, svc.Name)
 		return nil
