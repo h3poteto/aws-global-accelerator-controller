@@ -219,19 +219,54 @@ func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, 
 }
 
 func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, svc *corev1.Service) error {
-	if _, ok := svc.Annotations[apis.EnableAWSGlobalAcceleratorAnnotation]; !ok {
-		klog.Infof("%s/%s does not have the annotation, so skip it", svc.Namespace, svc.Name)
-		return nil
-	}
 	if len(svc.Status.LoadBalancer.Ingress) < 1 {
 		klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", svc.Namespace, svc.Name)
 		return nil
 	}
 
-	correspondence, err := c.prepareConfigMap(ctx)
+	correspondence, err := c.prepareCorrespondence(ctx)
 	if err != nil {
 		klog.Errorf("Failed to prepare ConfigMap: %v", err)
 		return err
+	}
+
+	if _, ok := svc.Annotations[apis.EnableAWSGlobalAcceleratorAnnotation]; !ok {
+		deleted := 0
+	INGRESS:
+		for i := range svc.Status.LoadBalancer.Ingress {
+			ingress := svc.Status.LoadBalancer.Ingress[i]
+			if acceleratorArn, ok := correspondence[ingress.Hostname]; ok {
+				provider, err := detectCloudProvider(ingress.Hostname)
+				if err != nil {
+					klog.Error(err)
+					continue INGRESS
+				}
+				switch provider {
+				case "aws":
+					_, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
+					cloud := cloudaws.NewAWS(region)
+					err := cloud.CleanupGlobalAccelerator(ctx, acceleratorArn)
+					if err != nil {
+						klog.Error(err)
+						return err
+					}
+					delete(correspondence, ingress.Hostname)
+					deleted++
+				default:
+					klog.Warningf("Not implemented for %s", provider)
+					continue INGRESS
+				}
+			}
+		}
+		if deleted > 0 {
+			if err := c.updateCorrespondence(ctx, correspondence); err != nil {
+				klog.Error(err)
+				return err
+			}
+		} else {
+			klog.Infof("%s/%s does not have the annotation, so skip it", svc.Namespace, svc.Name)
+		}
+		return nil
 	}
 
 	for i := range svc.Status.LoadBalancer.Ingress {
@@ -246,7 +281,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 			// Get load balancer name and region from hostname
 			name, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
 			cloud := cloudaws.NewAWS(region)
-			acceleratorArn, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence)
+			acceleratorArn, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
 			if err != nil {
 				return err
 			}
@@ -259,7 +294,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		}
 	}
 
-	return c.updateConfigMap(ctx, correspondence)
+	return c.updateCorrespondence(ctx, correspondence)
 }
 
 func detectCloudProvider(hostname string) (string, error) {

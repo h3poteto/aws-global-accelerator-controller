@@ -4,16 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/globalaccelerator"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 )
 
-func (a *AWS) EnsureGlobalAccelerator(ctx context.Context, svc *corev1.Service, ingress *corev1.LoadBalancerIngress, lbName, region string, correspondence map[string]string) (*string, error) {
-	lb, err := a.findNetworkLoadBalancer(ctx, lbName)
+func (a *AWS) EnsureGlobalAccelerator(
+	ctx context.Context,
+	svc *corev1.Service,
+	ingress *corev1.LoadBalancerIngress,
+	lbName, region, acceleratorArn string,
+) (*string, error) {
+	lb, err := a.getNetworkLoadBalancer(ctx, lbName)
 	if err != nil {
 		return nil, err
 	}
@@ -23,8 +30,8 @@ func (a *AWS) EnsureGlobalAccelerator(ctx context.Context, svc *corev1.Service, 
 	klog.Infof("LoadBalancer is %s", *lb.LoadBalancerArn)
 	var accelerator *globalaccelerator.Accelerator
 	// Confirm Global Accelerator
-	if value, ok := correspondence[ingress.Hostname]; ok {
-		accelerator, _ = a.getAccelerator(ctx, value)
+	if acceleratorArn != "" {
+		accelerator, _ = a.getAccelerator(ctx, acceleratorArn)
 	}
 
 	if accelerator == nil {
@@ -33,14 +40,13 @@ func (a *AWS) EnsureGlobalAccelerator(ctx context.Context, svc *corev1.Service, 
 		createdArn, err := a.createGlobalAccelerator(ctx, lb, svc, region)
 		if err != nil {
 			if createdArn != nil {
-				a.cleanupGlobalAccelerator(ctx, *createdArn)
+				a.CleanupGlobalAccelerator(ctx, *createdArn)
 			}
 			return nil, err
 		}
 		return createdArn, nil
 	} else {
 		// Update Global Accelerator
-		klog.Infof("Updating Global Accelerator: %s", *accelerator.AcceleratorArn)
 		if err := a.updateGlobalAccelerator(ctx, accelerator, lb, svc, region); err != nil {
 			return nil, err
 		}
@@ -66,8 +72,40 @@ func (a *AWS) createGlobalAccelerator(ctx context.Context, lb *elbv2.LoadBalance
 	return accelerator.AcceleratorArn, nil
 }
 
-func (a *AWS) cleanupGlobalAccelerator(ctx context.Context, arn string) {
-	// TODO:
+func (a *AWS) CleanupGlobalAccelerator(ctx context.Context, arn string) error {
+	accelerator, listener, endpoint := a.listRelatedGlobalAccelerator(ctx, arn)
+	if endpoint != nil {
+		if err := a.deleteEndpointGroup(ctx, *endpoint.EndpointGroupArn); err != nil {
+			return err
+		}
+	}
+	if listener != nil {
+		if err := a.deleteListener(ctx, *listener.ListenerArn); err != nil {
+			return err
+		}
+	}
+	if accelerator != nil {
+		if err := a.deleteAccelerator(ctx, *accelerator.AcceleratorArn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*globalaccelerator.Accelerator, *globalaccelerator.Listener, *globalaccelerator.EndpointGroup) {
+	accelerator, err := a.getAccelerator(ctx, arn)
+	if err != nil {
+		return nil, nil, nil
+	}
+	listener, err := a.getListener(ctx, *accelerator.AcceleratorArn)
+	if err != nil {
+		return accelerator, nil, nil
+	}
+	endpoint, err := a.getEndpointGroup(ctx, *listener.ListenerArn)
+	if err != nil {
+		return accelerator, listener, nil
+	}
+	return accelerator, listener, endpoint
 }
 
 func (a *AWS) updateGlobalAccelerator(ctx context.Context, accelerator *globalaccelerator.Accelerator, lb *elbv2.LoadBalancer, svc *corev1.Service, region string) error {
@@ -86,6 +124,7 @@ func (a *AWS) updateGlobalAccelerator(ctx context.Context, accelerator *globalac
 		}
 	}
 	if listenerProtocolChanged(listener, svc) || listenerPortChanged(listener, svc) {
+		klog.Infof("Listener is changed, so updating: %s", *listener.ListenerArn)
 		listener, err = a.updateListener(ctx, listener, svc)
 		if err != nil {
 			klog.Error(err)
@@ -107,9 +146,15 @@ func (a *AWS) updateGlobalAccelerator(ctx context.Context, accelerator *globalac
 		}
 	}
 	if !endpointContainsLB(endpoint, lb) {
+		klog.Infof("Endpoint Group is changed, so updating: %s", *endpoint.EndpointGroupArn)
 		endpoint, err = a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn)
+		if err != nil {
+			klog.Error(err)
+			return err
+		}
 	}
 
+	klog.Infof("All resources are synced: %s", *accelerator.AcceleratorArn)
 	return nil
 }
 
@@ -185,6 +230,49 @@ func (a *AWS) createAccelerator(ctx context.Context, name string) (*globalaccele
 	return acceleratorRes.Accelerator, nil
 }
 
+func (a *AWS) deleteAccelerator(ctx context.Context, arn string) error {
+	klog.Infof("Disabling Global Accelerator %s", arn)
+	updateInput := &globalaccelerator.UpdateAcceleratorInput{
+		AcceleratorArn: aws.String(arn),
+		Enabled:        aws.Bool(false),
+	}
+	_, err := a.ga.UpdateAcceleratorWithContext(ctx, updateInput)
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+
+	// Wait until status is synced
+	err = wait.Poll(10*time.Second, 3*time.Minute, func() (bool, error) {
+		accelerator, err := a.getAccelerator(ctx, arn)
+		if err != nil {
+			return false, err
+		}
+
+		if *accelerator.Status == globalaccelerator.AcceleratorStatusDeployed {
+			klog.Infof("Global Accelerator %s is %s", *accelerator.AcceleratorArn, *accelerator.Status)
+			return true, nil
+		}
+		klog.Infof("Global Accelerator %s is %s, so waiting", *accelerator.AcceleratorArn, *accelerator.Status)
+		return false, nil
+	})
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+
+	input := &globalaccelerator.DeleteAcceleratorInput{
+		AcceleratorArn: aws.String(arn),
+	}
+	_, err = a.ga.DeleteAcceleratorWithContext(ctx, input)
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+	klog.Infof("Global Accelerator is deleted: %s", arn)
+	return nil
+}
+
 //---------------------------------
 // Lstener methods
 //---------------------------------
@@ -257,6 +345,18 @@ func (a *AWS) updateListener(ctx context.Context, listener *globalaccelerator.Li
 	return res.Listener, nil
 }
 
+func (a *AWS) deleteListener(ctx context.Context, arn string) error {
+	input := &globalaccelerator.DeleteListenerInput{
+		ListenerArn: aws.String(arn),
+	}
+	_, err := a.ga.DeleteListenerWithContext(ctx, input)
+	if err != nil {
+		return err
+	}
+	klog.Infof("Listener is deleted: %s", arn)
+	return nil
+}
+
 //---------------------------------
 // EndpointGroup methods
 //---------------------------------
@@ -310,4 +410,16 @@ func (a *AWS) updateEndpointGroup(ctx context.Context, endpoint *globalaccelerat
 	}
 	klog.Infof("EndpointGroup is updated: %s", *res.EndpointGroup.EndpointGroupArn)
 	return res.EndpointGroup, nil
+}
+
+func (a *AWS) deleteEndpointGroup(ctx context.Context, arn string) error {
+	input := &globalaccelerator.DeleteEndpointGroupInput{
+		EndpointGroupArn: aws.String(arn),
+	}
+	_, err := a.ga.DeleteEndpointGroupWithContext(ctx, input)
+	if err != nil {
+		return err
+	}
+	klog.Infof("EndpointGroup is deleted: %s", arn)
+	return nil
 }
