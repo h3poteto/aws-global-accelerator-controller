@@ -218,7 +218,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		return reconcile.Result{}, err
 	}
 
-	if _, ok := svc.Annotations[apis.EnableAWSGlobalAcceleratorAnnotation]; !ok {
+	if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorEnabledAnnotation]; !ok {
 		deleted := 0
 	INGRESS:
 		for i := range svc.Status.LoadBalancer.Ingress {
