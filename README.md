@@ -1,3 +1,8 @@
+[![Test](https://github.com/h3poteto/aws-global-accelerator-controller/actions/workflows/test.yml/badge.svg)](https://github.com/h3poteto/aws-global-accelerator-controller/actions/workflows/test.yml)
+[![Docker](https://github.com/h3poteto/aws-global-accelerator-controller/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/h3poteto/aws-global-accelerator-controller/actions/workflows/docker-publish.yml)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/h3poteto/aws-global-accelerator-controller)](https://github.com/h3poteto/aws-global-accelerator-controller/releases)
+[![Renovate](https://img.shields.io/badge/renovate-enabled-brightgreen.svg)](https://renovatebot.com)
+![GitHub](https://img.shields.io/github/license/h3poteto/aws-global-accelerator-controller)
 
 # AWS Global Accelerator Controller
 AWS Global Accelerator Controller is a controller to manage Global Accelerator for a Kubenretes cluster. The features are
