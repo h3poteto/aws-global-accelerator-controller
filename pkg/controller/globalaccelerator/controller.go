@@ -270,9 +270,15 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 			// Get load balancer name and region from hostname
 			name, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
 			cloud := cloudaws.NewAWS(region)
-			acceleratorArn, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
+			acceleratorArn, retryAfter, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
 			if err != nil {
 				return reconcile.Result{}, err
+			}
+			if retryAfter > 0 {
+				return reconcile.Result{
+					Requeue:      true,
+					RequeueAfter: retryAfter,
+				}, nil
 			}
 			if acceleratorArn != nil {
 				correspondence[ingress.Hostname] = *acceleratorArn

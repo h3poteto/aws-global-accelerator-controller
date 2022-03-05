@@ -19,16 +19,17 @@ func (a *AWS) EnsureGlobalAccelerator(
 	svc *corev1.Service,
 	ingress *corev1.LoadBalancerIngress,
 	lbName, region, acceleratorArn string,
-) (*string, error) {
+) (*string, time.Duration, error) {
 	lb, err := a.getNetworkLoadBalancer(ctx, lbName)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if *lb.DNSName != ingress.Hostname {
-		return nil, fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
+		return nil, 0, fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
 	}
 	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
-		return nil, fmt.Errorf("LoadBalancer %s is not Active", *lb.LoadBalancerArn)
+		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
+		return nil, 30 * time.Second, nil
 	}
 
 	klog.Infof("LoadBalancer is %s", *lb.LoadBalancerArn)
@@ -48,15 +49,15 @@ func (a *AWS) EnsureGlobalAccelerator(
 				klog.Warningf("Failed to create Global Accelerator, but some resources are created, so cleanup %s", *createdArn)
 				a.CleanupGlobalAccelerator(ctx, *createdArn)
 			}
-			return nil, err
+			return nil, 0, err
 		}
-		return createdArn, nil
+		return createdArn, 0, nil
 	} else {
 		// Update Global Accelerator
 		if err := a.updateGlobalAccelerator(ctx, accelerator, lb, svc, region); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		return accelerator.AcceleratorArn, nil
+		return accelerator.AcceleratorArn, 0, nil
 	}
 }
 

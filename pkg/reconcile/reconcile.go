@@ -79,7 +79,7 @@ func reconcileHandler(req interface{}, workqueue workqueue.RateLimitingInterface
 	case res.RequeueAfter > 0:
 		workqueue.Forget(req)
 		workqueue.AddAfter(req, res.RequeueAfter)
-		klog.Infof("Successfully synced &q, but requeued after", key)
+		klog.Infof("Successfully synced %q, but requeued after", key)
 	case res.Requeue:
 		workqueue.AddRateLimited(req)
 		klog.Infof("Successfully synced %q, but requeued", key)
