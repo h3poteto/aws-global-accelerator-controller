@@ -75,8 +75,9 @@ func controllerConfig() (string, string) {
 	if kubeconfig == "" {
 		kubeconfig = os.Getenv("KUBECONFIG")
 		if kubeconfig == "" {
-			kubeconfig = "$HOME/.kube/config"
+			kubeconfig = os.ExpandEnv("$HOME/.kube/config")
 			if _, err := os.Stat(kubeconfig); err != nil {
+				klog.Error(err)
 				kubeconfig = ""
 			}
 		}
