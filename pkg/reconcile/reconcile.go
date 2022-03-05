@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
+
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -18,8 +20,8 @@ type Result struct {
 }
 
 type KeyToObjFunc func(string) (runtime.Object, error)
-type ProcessDeleteFunc func(context.Context, string) error
-type ProcessCreateOrUpdateFunc func(context.Context, runtime.Object) error
+type ProcessDeleteFunc func(context.Context, string) (Result, error)
+type ProcessCreateOrUpdateFunc func(context.Context, runtime.Object) (Result, error)
 
 func ProcessNextWorkItem(workqueue workqueue.RateLimitingInterface, keyToObj KeyToObjFunc, processDelete ProcessDeleteFunc, processCreateOrUpdate ProcessCreateOrUpdateFunc) bool {
 	obj, shutdown := workqueue.Get()
@@ -28,24 +30,9 @@ func ProcessNextWorkItem(workqueue workqueue.RateLimitingInterface, keyToObj Key
 		return false
 	}
 
-	err := func(obj interface{}) error {
-		defer workqueue.Done(obj)
-		var key string
-		var ok bool
+	defer workqueue.Done(obj)
 
-		if key, ok = obj.(string); !ok {
-			workqueue.Forget(obj)
-			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
-			return nil
-		}
-		if err := syncHandler(key, keyToObj, processDelete, processCreateOrUpdate); err != nil {
-			return fmt.Errorf("error syncing '%s': %s", key, err.Error())
-		}
-		workqueue.Forget(obj)
-		klog.Infof("Successfully synced '%s'", key)
-		return nil
-	}(obj)
-
+	err := reconcileHandler(obj, workqueue, keyToObj, processDelete, processCreateOrUpdate)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return true
@@ -54,7 +41,14 @@ func ProcessNextWorkItem(workqueue workqueue.RateLimitingInterface, keyToObj Key
 	return true
 }
 
-func syncHandler(key string, keyToObj KeyToObjFunc, processDelete ProcessDeleteFunc, processCreateOrUpdate ProcessCreateOrUpdateFunc) error {
+func reconcileHandler(req interface{}, workqueue workqueue.RateLimitingInterface, keyToObj KeyToObjFunc, processDelete ProcessDeleteFunc, processCreateOrUpdate ProcessCreateOrUpdateFunc) error {
+	var key string
+	var ok bool
+
+	if key, ok = req.(string); !ok {
+		workqueue.Forget(req)
+		return fmt.Errorf("expected string in workqueue but got %#v", req)
+	}
 	startTime := time.Now()
 	defer func() {
 		klog.V(4).Infof("Finished syncing %q (%v)", key, time.Since(startTime))
@@ -62,15 +56,36 @@ func syncHandler(key string, keyToObj KeyToObjFunc, processDelete ProcessDeleteF
 
 	ctx := context.Background()
 
+	res := Result{}
 	obj, err := keyToObj(key)
 	switch {
 	case kerrors.IsNotFound(err):
-		err = processDelete(ctx, key)
+		res, err = processDelete(ctx, key)
 	case err != nil:
-		utilruntime.HandleError(fmt.Errorf("Unable to retrieve %q from store: %v", key, err))
+		return fmt.Errorf("Unable to retrieve %q from store: %v", key, err)
 	default:
-		err = processCreateOrUpdate(ctx, obj)
+		res, err = processCreateOrUpdate(ctx, obj)
 	}
 
-	return err
+	switch {
+	case err != nil:
+		if pkgerrors.IsNoRetry(err) {
+			return fmt.Errorf("error syncing %q: %s", key, err.Error())
+		} else {
+			workqueue.AddRateLimited(req)
+			return fmt.Errorf("error syncing %q, and requeued: %s", key, err.Error())
+		}
+
+	case res.RequeueAfter > 0:
+		workqueue.Forget(req)
+		workqueue.AddAfter(req, res.RequeueAfter)
+		klog.Infof("Successfully synced &q, but requeued after", key)
+	case res.Requeue:
+		workqueue.AddRateLimited(req)
+		klog.Infof("Successfully synced %q, but requeued", key)
+	default:
+		workqueue.Forget(req)
+		klog.Infof("Successfully synced %q", key)
+	}
+	return nil
 }

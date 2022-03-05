@@ -9,6 +9,7 @@ import (
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
+	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
@@ -167,30 +168,29 @@ func (c *GlobalAcceleratorController) keyToObject(key string) (runtime.Object, e
 	return c.serviceLister.Services(ns).Get(name)
 }
 
-func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) error {
+func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) (reconcile.Result, error) {
 	klog.Infof("%v has been deleted", key)
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
-		return nil
+		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("invalid resource key: %s", key)
 	}
 
 	correspondence, err := c.prepareCorrespondence(ctx)
 	if err != nil {
 		klog.Errorf("Failed to prepare ConfigMap: %v", err)
-		return err
+		return reconcile.Result{}, err
 	}
 
 	cloud := cloudaws.NewAWS("us-west-2")
 	accelerators, err := cloud.ListGlobalAcceleratorByTag(ctx, ns+"-"+name)
 	if err != nil {
 		klog.Error(err)
-		return err
+		return reconcile.Result{}, err
 	}
 	for _, accelerator := range accelerators {
 		if err := cloud.CleanupGlobalAccelerator(ctx, *accelerator.AcceleratorArn); err != nil {
 			klog.Error(err)
-			return err
+			return reconcile.Result{}, err
 		}
 		for key, value := range correspondence {
 			if value == *accelerator.AcceleratorArn {
@@ -198,23 +198,24 @@ func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, 
 			}
 		}
 	}
-	return c.updateCorrespondence(ctx, correspondence)
+	err = c.updateCorrespondence(ctx, correspondence)
+	return reconcile.Result{}, err
 }
 
-func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, obj runtime.Object) error {
+func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, obj runtime.Object) (reconcile.Result, error) {
 	svc, ok := obj.(*corev1.Service)
 	if !ok {
-		return fmt.Errorf("object is not Service, it is %T", obj)
+		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("object is not Service, it is %T", obj)
 	}
 	if len(svc.Status.LoadBalancer.Ingress) < 1 {
 		klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", svc.Namespace, svc.Name)
-		return nil
+		return reconcile.Result{}, nil
 	}
 
 	correspondence, err := c.prepareCorrespondence(ctx)
 	if err != nil {
 		klog.Errorf("Failed to prepare ConfigMap: %v", err)
-		return err
+		return reconcile.Result{}, err
 	}
 
 	if _, ok := svc.Annotations[apis.EnableAWSGlobalAcceleratorAnnotation]; !ok {
@@ -236,7 +237,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 					err := cloud.CleanupGlobalAccelerator(ctx, acceleratorArn)
 					if err != nil {
 						klog.Error(err)
-						return err
+						return reconcile.Result{}, err
 					}
 					delete(correspondence, ingress.Hostname)
 					deleted++
@@ -249,12 +250,12 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		if deleted > 0 {
 			if err := c.updateCorrespondence(ctx, correspondence); err != nil {
 				klog.Error(err)
-				return err
+				return reconcile.Result{}, err
 			}
 		} else {
 			klog.Infof("%s/%s does not have the annotation, so skip it", svc.Namespace, svc.Name)
 		}
-		return nil
+		return reconcile.Result{}, nil
 	}
 
 	for i := range svc.Status.LoadBalancer.Ingress {
@@ -271,7 +272,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 			cloud := cloudaws.NewAWS(region)
 			acceleratorArn, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
 			if err != nil {
-				return err
+				return reconcile.Result{}, err
 			}
 			if acceleratorArn != nil {
 				correspondence[ingress.Hostname] = *acceleratorArn
@@ -282,7 +283,8 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		}
 	}
 
-	return c.updateCorrespondence(ctx, correspondence)
+	err = c.updateCorrespondence(ctx, correspondence)
+	return reconcile.Result{}, err
 }
 
 func detectCloudProvider(hostname string) (string, error) {
