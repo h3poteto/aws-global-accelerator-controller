@@ -7,6 +7,7 @@ import (
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -14,7 +15,14 @@ import (
 )
 
 func wasLoadBalancerService(svc *corev1.Service) bool {
-	return svc.Spec.Type == corev1.ServiceTypeLoadBalancer
+	if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+		return false
+	}
+
+	if _, ok := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"]; !ok || svc.Spec.LoadBalancerClass == nil {
+		return false
+	}
+	return true
 }
 
 func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) (reconcile.Result, error) {
@@ -31,7 +39,7 @@ func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, 
 	}
 
 	cloud := cloudaws.NewAWS("us-west-2")
-	accelerators, err := cloud.ListGlobalAcceleratorByTag(ctx, ns+"-"+name)
+	accelerators, err := cloud.ListGlobalAcceleratorByTag(ctx, cloudaws.AcceleratorManagedTagValue("service", ns, name))
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -116,10 +124,10 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		}
 		switch provider {
 		case "aws":
-			// Get load balancer name and region from hostname
+			// Get load balancer name and region from the hostname
 			name, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
 			cloud := cloudaws.NewAWS(region)
-			acceleratorArn, retryAfter, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
+			acceleratorArn, retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
 			if err != nil {
 				return reconcile.Result{}, err
 			}

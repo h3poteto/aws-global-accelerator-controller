@@ -3,9 +3,13 @@ kind: Service
 metadata:
   annotations:
     h3poteto.dev/aws-global-accelerator-enabled: "yes"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
   name: h3poteto-test
   namespace: default
 spec:
+  externalTrafficPolicy: Local
   ports:
   - name: http
     port: 80
@@ -15,6 +19,7 @@ spec:
     port: 443
     protocol: TCP
     targetPort: 6443
-  type: NodePort
   selector:
     app: h3poteto
+  sessionAffinity: None
+  type: LoadBalancer

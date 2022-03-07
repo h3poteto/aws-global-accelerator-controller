@@ -144,7 +144,7 @@ func TestListenerProtocolChange(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.title, func(tt *testing.T) {
-			res := listenerProtocolChanged(c.listener, c.svc)
+			res := listenerProtocolChangedFromService(c.listener, c.svc)
 			assert.Equal(tt, c.expectedResult, res)
 		})
 
@@ -333,7 +333,7 @@ func TestListenerPortChanged(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.title, func(tt *testing.T) {
-			res := listenerPortChanged(c.listener, c.svc)
+			res := listenerPortChangedFromService(c.listener, c.svc)
 			assert.Equal(tt, c.expected, res)
 		})
 	}
