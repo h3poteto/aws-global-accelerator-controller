@@ -1,18 +1,15 @@
 package globalaccelerator
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
-	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
-	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -20,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
+	networkinglisters "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -39,8 +37,11 @@ type GlobalAcceleratorController struct {
 	kubeclient    kubernetes.Interface
 	serviceLister corelisters.ServiceLister
 	serviceSynced cache.InformerSynced
+	ingressLister networkinglisters.IngressLister
+	ingressSynced cache.InformerSynced
 
-	workqueue workqueue.RateLimitingInterface
+	serviceQueue workqueue.RateLimitingInterface
+	ingressQueue workqueue.RateLimitingInterface
 
 	namespace string
 
@@ -49,6 +50,7 @@ type GlobalAcceleratorController struct {
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingress,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFactory informers.SharedInformerFactory, config *GlobalAcceleratorConfig) *GlobalAcceleratorController {
@@ -58,10 +60,11 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &GlobalAcceleratorController{
-		kubeclient: kubeclient,
-		recorder:   recorder,
-		workqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
-		namespace:  config.Namespace,
+		kubeclient:   kubeclient,
+		recorder:     recorder,
+		serviceQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),
+		ingressQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-ingress"),
+		namespace:    config.Namespace,
 	}
 	{
 		f := informerFactory.Core().V1().Services()
@@ -72,8 +75,18 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 			UpdateFunc: controller.updateServiceNotification,
 			DeleteFunc: controller.deleteServiceNotification,
 		})
-
 	}
+	{
+		f := informerFactory.Networking().V1().Ingresses()
+		controller.ingressLister = f.Lister()
+		controller.ingressSynced = f.Informer().HasSynced
+		f.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    controller.addIngressNotification,
+			UpdateFunc: controller.updateIngressNotification,
+			DeleteFunc: controller.deleteIngressNotification,
+		})
+	}
+
 	return controller
 }
 
@@ -86,9 +99,6 @@ func (c *GlobalAcceleratorController) addSereviceNotification(obj interface{}) {
 }
 
 func (c *GlobalAcceleratorController) updateServiceNotification(old, new interface{}) {
-	// TODO: Now we don't have any methods to retry even if some errors occur.
-	// So call reconcile when resyncing. If we implement ErrorWithRetry to retry when error,
-	// please uncomment these lines.
 	if reflect.DeepEqual(old, new) {
 		return
 	}
@@ -118,7 +128,40 @@ func (c *GlobalAcceleratorController) deleteServiceNotification(obj interface{})
 		klog.V(4).Infof("Deleting Service %s/%s", svc.Namespace, svc.Name)
 		c.enqueueService(svc)
 	}
+}
 
+func (c *GlobalAcceleratorController) addIngressNotification(obj interface{}) {
+	ingress := obj.(*networkingv1.Ingress)
+	klog.V(4).Infof("Ingress %s/%s is created", ingress.Namespace, ingress.Name)
+	c.enqueueIngress(ingress)
+}
+
+func (c *GlobalAcceleratorController) updateIngressNotification(old, new interface{}) {
+	if reflect.DeepEqual(old, new) {
+		return
+	}
+	ingress := new.(*networkingv1.Ingress)
+	klog.V(4).Infof("Ingress %s/%s is updated", ingress.Namespace, ingress.Name)
+	c.enqueueIngress(ingress)
+}
+
+func (c *GlobalAcceleratorController) deleteIngressNotification(obj interface{}) {
+	ingress, ok := obj.(*networkingv1.Ingress)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
+			return
+		}
+		ingress, ok = tombstone.Obj.(*networkingv1.Ingress)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
+			return
+		}
+		klog.V(4).Infof("Recovered deleted object %q from tombstone", ingress.Name)
+	}
+	klog.V(4).Infof("Deleting Ingress %s/%s", ingress.Namespace, ingress.Name)
+	c.enqueueIngress(ingress)
 }
 
 func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
@@ -128,12 +171,22 @@ func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
 		utilruntime.HandleError(err)
 		return
 	}
-	c.workqueue.AddRateLimited(key)
+	c.serviceQueue.AddRateLimited(key)
+}
+
+func (c *GlobalAcceleratorController) enqueueIngress(obj *networkingv1.Ingress) {
+	var key string
+	var err error
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	c.ingressQueue.AddRateLimited(key)
 }
 
 func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	defer c.workqueue.ShutDown()
+	defer c.serviceQueue.ShutDown()
 
 	klog.Info("Starting GlobalAccelerator controller")
 
@@ -144,7 +197,10 @@ func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{
 
 	klog.Info("Starting workers")
 	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runWorker, time.Second, stopCh)
+		go wait.Until(c.runServiceWorker, time.Second, stopCh)
+	}
+	for i := 0; i < threadiness; i++ {
+		go wait.Until(c.runIngressWorker, time.Second, stopCh)
 	}
 
 	klog.Info("Started workers")
@@ -154,12 +210,17 @@ func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{
 	return nil
 }
 
-func (c *GlobalAcceleratorController) runWorker() {
-	for reconcile.ProcessNextWorkItem(c.workqueue, c.keyToObject, c.processServiceDelete, c.processServiceCreateOrUpdate) {
+func (c *GlobalAcceleratorController) runServiceWorker() {
+	for reconcile.ProcessNextWorkItem(c.serviceQueue, c.keyToService, c.processServiceDelete, c.processServiceCreateOrUpdate) {
 	}
 }
 
-func (c *GlobalAcceleratorController) keyToObject(key string) (runtime.Object, error) {
+func (c *GlobalAcceleratorController) runIngressWorker() {
+	for reconcile.ProcessNextWorkItem(c.ingressQueue, c.keyToIngress, c.processIngressDelete, c.processIngressCreateOrUpdate) {
+	}
+}
+
+func (c *GlobalAcceleratorController) keyToService(key string) (runtime.Object, error) {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("invalid resource key: %s", key)
@@ -168,129 +229,13 @@ func (c *GlobalAcceleratorController) keyToObject(key string) (runtime.Object, e
 	return c.serviceLister.Services(ns).Get(name)
 }
 
-func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, key string) (reconcile.Result, error) {
-	klog.Infof("%v has been deleted", key)
+func (c *GlobalAcceleratorController) keyToIngress(key string) (runtime.Object, error) {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("invalid resource key: %s", key)
+		return nil, fmt.Errorf("invalid resource key: %s", key)
 	}
 
-	correspondence, err := c.prepareCorrespondence(ctx)
-	if err != nil {
-		klog.Errorf("Failed to prepare ConfigMap: %v", err)
-		return reconcile.Result{}, err
-	}
-
-	cloud := cloudaws.NewAWS("us-west-2")
-	accelerators, err := cloud.ListGlobalAcceleratorByTag(ctx, ns+"-"+name)
-	if err != nil {
-		klog.Error(err)
-		return reconcile.Result{}, err
-	}
-	for _, accelerator := range accelerators {
-		if err := cloud.CleanupGlobalAccelerator(ctx, *accelerator.AcceleratorArn); err != nil {
-			klog.Error(err)
-			return reconcile.Result{}, err
-		}
-		for key, value := range correspondence {
-			if value == *accelerator.AcceleratorArn {
-				delete(correspondence, key)
-			}
-		}
-	}
-	err = c.updateCorrespondence(ctx, correspondence)
-	return reconcile.Result{}, err
-}
-
-func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.Context, obj runtime.Object) (reconcile.Result, error) {
-	svc, ok := obj.(*corev1.Service)
-	if !ok {
-		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("object is not Service, it is %T", obj)
-	}
-	if len(svc.Status.LoadBalancer.Ingress) < 1 {
-		klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", svc.Namespace, svc.Name)
-		return reconcile.Result{}, nil
-	}
-
-	correspondence, err := c.prepareCorrespondence(ctx)
-	if err != nil {
-		klog.Errorf("Failed to prepare ConfigMap: %v", err)
-		return reconcile.Result{}, err
-	}
-
-	if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorEnabledAnnotation]; !ok {
-		deleted := 0
-	INGRESS:
-		for i := range svc.Status.LoadBalancer.Ingress {
-			ingress := svc.Status.LoadBalancer.Ingress[i]
-			if acceleratorArn, ok := correspondence[ingress.Hostname]; ok {
-				klog.Infof("Service %s/%s does not have annotation, but it is recorded in configmaps: %s", svc.Namespace, svc.Name, ingress.Hostname)
-				provider, err := detectCloudProvider(ingress.Hostname)
-				if err != nil {
-					klog.Error(err)
-					continue INGRESS
-				}
-				switch provider {
-				case "aws":
-					_, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
-					cloud := cloudaws.NewAWS(region)
-					err := cloud.CleanupGlobalAccelerator(ctx, acceleratorArn)
-					if err != nil {
-						klog.Error(err)
-						return reconcile.Result{}, err
-					}
-					delete(correspondence, ingress.Hostname)
-					deleted++
-				default:
-					klog.Warningf("Not implemented for %s", provider)
-					continue INGRESS
-				}
-			}
-		}
-		if deleted > 0 {
-			if err := c.updateCorrespondence(ctx, correspondence); err != nil {
-				klog.Error(err)
-				return reconcile.Result{}, err
-			}
-		} else {
-			klog.Infof("%s/%s does not have the annotation, so skip it", svc.Namespace, svc.Name)
-		}
-		return reconcile.Result{}, nil
-	}
-
-	for i := range svc.Status.LoadBalancer.Ingress {
-		ingress := svc.Status.LoadBalancer.Ingress[i]
-		provider, err := detectCloudProvider(ingress.Hostname)
-		if err != nil {
-			klog.Error(err)
-			continue
-		}
-		switch provider {
-		case "aws":
-			// Get load balancer name and region from hostname
-			name, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
-			cloud := cloudaws.NewAWS(region)
-			acceleratorArn, retryAfter, err := cloud.EnsureGlobalAccelerator(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			if retryAfter > 0 {
-				return reconcile.Result{
-					Requeue:      true,
-					RequeueAfter: retryAfter,
-				}, nil
-			}
-			if acceleratorArn != nil {
-				correspondence[ingress.Hostname] = *acceleratorArn
-			}
-		default:
-			klog.Warningf("Not implemented for %s", provider)
-			continue
-		}
-	}
-
-	err = c.updateCorrespondence(ctx, correspondence)
-	return reconcile.Result{}, err
+	return c.ingressLister.Ingresses(ns).Get(name)
 }
 
 func detectCloudProvider(hostname string) (string, error) {
@@ -302,8 +247,4 @@ func detectCloudProvider(hostname string) (string, error) {
 	default:
 		return "", fmt.Errorf("Unknown cloud provider: %s", domain)
 	}
-}
-
-func wasLoadBalancerService(svc *corev1.Service) bool {
-	return svc.Spec.Type == corev1.ServiceTypeLoadBalancer
 }
