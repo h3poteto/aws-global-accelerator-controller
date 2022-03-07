@@ -9,6 +9,7 @@ import (
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -16,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
+	networkinglisters "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -35,8 +37,11 @@ type GlobalAcceleratorController struct {
 	kubeclient    kubernetes.Interface
 	serviceLister corelisters.ServiceLister
 	serviceSynced cache.InformerSynced
+	ingressLister networkinglisters.IngressLister
+	ingressSynced cache.InformerSynced
 
 	serviceQueue workqueue.RateLimitingInterface
+	ingressQueue workqueue.RateLimitingInterface
 
 	namespace string
 
@@ -58,6 +63,7 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 		kubeclient:   kubeclient,
 		recorder:     recorder,
 		serviceQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),
+		ingressQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-ingress"),
 		namespace:    config.Namespace,
 	}
 	{
@@ -69,8 +75,18 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 			UpdateFunc: controller.updateServiceNotification,
 			DeleteFunc: controller.deleteServiceNotification,
 		})
-
 	}
+	{
+		f := informerFactory.Networking().V1().Ingresses()
+		controller.ingressLister = f.Lister()
+		controller.ingressSynced = f.Informer().HasSynced
+		f.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    controller.addIngressNotification,
+			UpdateFunc: controller.updateIngressNotification,
+			DeleteFunc: controller.deleteIngressNotification,
+		})
+	}
+
 	return controller
 }
 
@@ -112,7 +128,40 @@ func (c *GlobalAcceleratorController) deleteServiceNotification(obj interface{})
 		klog.V(4).Infof("Deleting Service %s/%s", svc.Namespace, svc.Name)
 		c.enqueueService(svc)
 	}
+}
 
+func (c *GlobalAcceleratorController) addIngressNotification(obj interface{}) {
+	ingress := obj.(*networkingv1.Ingress)
+	klog.V(4).Infof("Ingress %s/%s is created", ingress.Namespace, ingress.Name)
+	c.enqueueIngress(ingress)
+}
+
+func (c *GlobalAcceleratorController) updateIngressNotification(old, new interface{}) {
+	if reflect.DeepEqual(old, new) {
+		return
+	}
+	ingress := new.(*networkingv1.Ingress)
+	klog.V(4).Infof("Ingress %s/%s is updated", ingress.Namespace, ingress.Name)
+	c.enqueueIngress(ingress)
+}
+
+func (c *GlobalAcceleratorController) deleteIngressNotification(obj interface{}) {
+	ingress, ok := obj.(*networkingv1.Ingress)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
+			return
+		}
+		ingress, ok = tombstone.Obj.(*networkingv1.Ingress)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
+			return
+		}
+		klog.V(4).Infof("Recovered deleted object %q from tombstone", ingress.Name)
+	}
+	klog.V(4).Infof("Deleting Ingress %s/%s", ingress.Namespace, ingress.Name)
+	c.enqueueIngress(ingress)
 }
 
 func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
@@ -123,6 +172,16 @@ func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
 		return
 	}
 	c.serviceQueue.AddRateLimited(key)
+}
+
+func (c *GlobalAcceleratorController) enqueueIngress(obj *networkingv1.Ingress) {
+	var key string
+	var err error
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	c.ingressQueue.AddRateLimited(key)
 }
 
 func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{}) error {
@@ -140,6 +199,9 @@ func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runServiceWorker, time.Second, stopCh)
 	}
+	for i := 0; i < threadiness; i++ {
+		go wait.Until(c.runIngressWorker, time.Second, stopCh)
+	}
 
 	klog.Info("Started workers")
 	<-stopCh
@@ -149,17 +211,31 @@ func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{
 }
 
 func (c *GlobalAcceleratorController) runServiceWorker() {
-	for reconcile.ProcessNextWorkItem(c.serviceQueue, c.keyToObject, c.processServiceDelete, c.processServiceCreateOrUpdate) {
+	for reconcile.ProcessNextWorkItem(c.serviceQueue, c.keyToService, c.processServiceDelete, c.processServiceCreateOrUpdate) {
 	}
 }
 
-func (c *GlobalAcceleratorController) keyToObject(key string) (runtime.Object, error) {
+func (c *GlobalAcceleratorController) runIngressWorker() {
+	for reconcile.ProcessNextWorkItem(c.ingressQueue, c.keyToIngress, c.processIngressDelete, c.processIngressCreateOrUpdate) {
+	}
+}
+
+func (c *GlobalAcceleratorController) keyToService(key string) (runtime.Object, error) {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("invalid resource key: %s", key)
 	}
 
 	return c.serviceLister.Services(ns).Get(name)
+}
+
+func (c *GlobalAcceleratorController) keyToIngress(key string) (runtime.Object, error) {
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("invalid resource key: %s", key)
+	}
+
+	return c.ingressLister.Ingresses(ns).Get(name)
 }
 
 func detectCloudProvider(hostname string) (string, error) {
