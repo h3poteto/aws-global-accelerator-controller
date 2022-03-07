@@ -40,7 +40,7 @@ type GlobalAcceleratorController struct {
 	serviceLister corelisters.ServiceLister
 	serviceSynced cache.InformerSynced
 
-	workqueue workqueue.RateLimitingInterface
+	serviceQueue workqueue.RateLimitingInterface
 
 	namespace string
 
@@ -49,6 +49,7 @@ type GlobalAcceleratorController struct {
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingress,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFactory informers.SharedInformerFactory, config *GlobalAcceleratorConfig) *GlobalAcceleratorController {
@@ -58,10 +59,10 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &GlobalAcceleratorController{
-		kubeclient: kubeclient,
-		recorder:   recorder,
-		workqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName),
-		namespace:  config.Namespace,
+		kubeclient:   kubeclient,
+		recorder:     recorder,
+		serviceQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),
+		namespace:    config.Namespace,
 	}
 	{
 		f := informerFactory.Core().V1().Services()
@@ -86,9 +87,6 @@ func (c *GlobalAcceleratorController) addSereviceNotification(obj interface{}) {
 }
 
 func (c *GlobalAcceleratorController) updateServiceNotification(old, new interface{}) {
-	// TODO: Now we don't have any methods to retry even if some errors occur.
-	// So call reconcile when resyncing. If we implement ErrorWithRetry to retry when error,
-	// please uncomment these lines.
 	if reflect.DeepEqual(old, new) {
 		return
 	}
@@ -128,12 +126,12 @@ func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
 		utilruntime.HandleError(err)
 		return
 	}
-	c.workqueue.AddRateLimited(key)
+	c.serviceQueue.AddRateLimited(key)
 }
 
 func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	defer c.workqueue.ShutDown()
+	defer c.serviceQueue.ShutDown()
 
 	klog.Info("Starting GlobalAccelerator controller")
 
@@ -144,7 +142,7 @@ func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{
 
 	klog.Info("Starting workers")
 	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runWorker, time.Second, stopCh)
+		go wait.Until(c.runServiceWorker, time.Second, stopCh)
 	}
 
 	klog.Info("Started workers")
@@ -154,8 +152,8 @@ func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{
 	return nil
 }
 
-func (c *GlobalAcceleratorController) runWorker() {
-	for reconcile.ProcessNextWorkItem(c.workqueue, c.keyToObject, c.processServiceDelete, c.processServiceCreateOrUpdate) {
+func (c *GlobalAcceleratorController) runServiceWorker() {
+	for reconcile.ProcessNextWorkItem(c.serviceQueue, c.keyToObject, c.processServiceDelete, c.processServiceCreateOrUpdate) {
 	}
 }
 
