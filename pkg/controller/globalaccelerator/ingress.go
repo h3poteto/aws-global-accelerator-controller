@@ -15,7 +15,7 @@ import (
 )
 
 func wasALBIngress(ingress *networkingv1.Ingress) bool {
-	if *ingress.Spec.IngressClassName == "alb" {
+	if ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == "alb" {
 		return true
 	}
 	if _, ok := ingress.Annotations["kubernetes.io/ingress.class"]; ok {
