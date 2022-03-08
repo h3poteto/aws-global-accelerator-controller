@@ -193,6 +193,7 @@ func (c *GlobalAcceleratorController) enqueueIngress(obj *networkingv1.Ingress) 
 func (c *GlobalAcceleratorController) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
 	defer c.serviceQueue.ShutDown()
+	defer c.ingressQueue.ShutDown()
 
 	klog.Info("Starting GlobalAccelerator controller")
 
