@@ -23,5 +23,6 @@ func init() {
 	RootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 	RootCmd.AddCommand(
 		controller.ControllerCmd(),
+		versionCmd(),
 	)
 }
