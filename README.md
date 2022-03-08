@@ -7,8 +7,8 @@
 # AWS Global Accelerator Controller
 AWS Global Accelerator Controller is a controller to manage Global Accelerator for a Kubenretes cluster. The features are
 
-- Create Global Accelerator for the Load Balancer which is created by Service `type: LoadBalancer`.
-- You can control the behavior using Service's annotations
+- Create Global Accelerator for the Network Load Balancer which is created by Service `type: LoadBalancer`.
+- Create Global Accelerator for the Application Load Balancer which is created by aws-load-balancer-controller.
 - Create Route53 records associated to Global Accelerator (future work)
 
 
