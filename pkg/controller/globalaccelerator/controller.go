@@ -132,8 +132,10 @@ func (c *GlobalAcceleratorController) deleteServiceNotification(obj interface{})
 
 func (c *GlobalAcceleratorController) addIngressNotification(obj interface{}) {
 	ingress := obj.(*networkingv1.Ingress)
-	klog.V(4).Infof("Ingress %s/%s is created", ingress.Namespace, ingress.Name)
-	c.enqueueIngress(ingress)
+	if wasALBIngress(ingress) {
+		klog.V(4).Infof("Ingress %s/%s is created", ingress.Namespace, ingress.Name)
+		c.enqueueIngress(ingress)
+	}
 }
 
 func (c *GlobalAcceleratorController) updateIngressNotification(old, new interface{}) {
@@ -141,8 +143,10 @@ func (c *GlobalAcceleratorController) updateIngressNotification(old, new interfa
 		return
 	}
 	ingress := new.(*networkingv1.Ingress)
-	klog.V(4).Infof("Ingress %s/%s is updated", ingress.Namespace, ingress.Name)
-	c.enqueueIngress(ingress)
+	if wasALBIngress(ingress) {
+		klog.V(4).Infof("Ingress %s/%s is updated", ingress.Namespace, ingress.Name)
+		c.enqueueIngress(ingress)
+	}
 }
 
 func (c *GlobalAcceleratorController) deleteIngressNotification(obj interface{}) {
@@ -160,8 +164,10 @@ func (c *GlobalAcceleratorController) deleteIngressNotification(obj interface{})
 		}
 		klog.V(4).Infof("Recovered deleted object %q from tombstone", ingress.Name)
 	}
-	klog.V(4).Infof("Deleting Ingress %s/%s", ingress.Namespace, ingress.Name)
-	c.enqueueIngress(ingress)
+	if wasALBIngress(ingress) {
+		klog.V(4).Infof("Deleting Ingress %s/%s", ingress.Namespace, ingress.Name)
+		c.enqueueIngress(ingress)
+	}
 }
 
 func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {
