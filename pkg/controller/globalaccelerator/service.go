@@ -89,9 +89,13 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 				}
 				switch provider {
 				case "aws":
-					_, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
+					_, region, err := cloudaws.GetLBNameFromHostname(ingress.Hostname)
+					if err != nil {
+						klog.Error(err)
+						return reconcile.Result{}, err
+					}
 					cloud := cloudaws.NewAWS(region)
-					err := cloud.CleanupGlobalAccelerator(ctx, acceleratorArn)
+					err = cloud.CleanupGlobalAccelerator(ctx, acceleratorArn)
 					if err != nil {
 						klog.Error(err)
 						return reconcile.Result{}, err
@@ -125,7 +129,11 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		switch provider {
 		case "aws":
 			// Get load balancer name and region from the hostname
-			name, region := cloudaws.GetLBNameFromHostname(ingress.Hostname)
+			name, region, err := cloudaws.GetLBNameFromHostname(ingress.Hostname)
+			if err != nil {
+				klog.Error(err)
+				return reconcile.Result{}, err
+			}
 			cloud := cloudaws.NewAWS(region)
 			acceleratorArn, retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &ingress, name, region, correspondence[ingress.Hostname])
 			if err != nil {

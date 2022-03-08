@@ -4,6 +4,7 @@ metadata:
   name: h3poteto-test
   namespace: default
   annotations:
+    h3poteto.dev/aws-global-accelerator-enabled: "yes"
     alb.ingress.kubernetes.io/scheme: internet-facing
 spec:
   ingressClassName: alb

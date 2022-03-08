@@ -20,7 +20,7 @@ const (
 )
 
 func AcceleratorManagedTagValue(resource, ns, name string) string {
-	return resource + "/" + ns + "/" + name
+	return resource + "-" + ns + "-" + name
 }
 
 func (a *AWS) EnsureGlobalAcceleratorForService(
@@ -78,10 +78,13 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 ) (*string, time.Duration, error) {
 	lb, err := a.getLoadBalancer(ctx, lbName)
 	if err != nil {
+		klog.Error(err)
 		return nil, 0, err
 	}
 	if *lb.DNSName != lbIngress.Hostname {
-		return nil, 0, fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
+		err := fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
+		klog.Error(err)
+		return nil, 0, err
 	}
 	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
 		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
@@ -111,6 +114,7 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 	} else {
 		// Update Global Accelerator
 		if err := a.updateGlobalAcceleratorForIngress(ctx, accelerator, lb, ingress, region); err != nil {
+			klog.Error(err)
 			return nil, 0, err
 		}
 		return accelerator.AcceleratorArn, 0, nil
@@ -444,6 +448,7 @@ func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]*global
 }
 
 func (a *AWS) createAccelerator(ctx context.Context, name string) (*globalaccelerator.Accelerator, error) {
+	klog.Infof("Creating Global Accelerator %s", name)
 	acceleratorInput := &globalaccelerator.CreateAcceleratorInput{
 		Enabled:       aws.Bool(true),
 		IpAddressType: aws.String("IPV4"),
