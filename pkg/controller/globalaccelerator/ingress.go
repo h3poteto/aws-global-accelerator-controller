@@ -31,14 +31,9 @@ func (c *GlobalAcceleratorController) processIngressDelete(ctx context.Context, 
 		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("invalid resource key: %s", key)
 	}
 
-	correspondence, err := c.prepareCorrespondence(ctx)
-	if err != nil {
-		klog.Errorf("Failed to prepare ConfigMap: %v", err)
-		return reconcile.Result{}, err
-	}
-
 	cloud := cloudaws.NewAWS("us-west-2")
-	accelerators, err := cloud.ListGlobalAcceleratorByTag(ctx, cloudaws.AcceleratorManagedTagValue("ingress", ns, name))
+
+	accelerators, err := cloud.ListGlobalAcceletaroByResource(ctx, "service", ns, name)
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -48,13 +43,7 @@ func (c *GlobalAcceleratorController) processIngressDelete(ctx context.Context, 
 			klog.Error(err)
 			return reconcile.Result{}, err
 		}
-		for key, value := range correspondence {
-			if value == *accelerator.AcceleratorArn {
-				delete(correspondence, key)
-			}
-		}
 	}
-	err = c.updateCorrespondence(ctx, correspondence)
 	return reconcile.Result{}, err
 }
 
@@ -68,59 +57,53 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 		return reconcile.Result{}, nil
 	}
 
-	correspondence, err := c.prepareCorrespondence(ctx)
-	if err != nil {
-		klog.Errorf("Failed to prepare ConfigMap: %v", err)
-		return reconcile.Result{}, err
-	}
-
 	if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorEnabledAnnotation]; !ok {
 		deleted := 0
 	INGRESS:
 		for i := range ingress.Status.LoadBalancer.Ingress {
 			lbIngress := ingress.Status.LoadBalancer.Ingress[i]
-			if acceleratorArn, ok := correspondence[lbIngress.Hostname]; ok {
-				klog.Infof("Ingress %s/%s does not have annotation, but it is recorded in configmaps: %s", ingress.Namespace, ingress.Name, lbIngress.Hostname)
-				provider, err := detectCloudProvider(lbIngress.Hostname)
+			provider, err := detectCloudProvider(lbIngress.Hostname)
+			if err != nil {
+				klog.Error(err)
+				continue INGRESS
+			}
+			switch provider {
+			case "aws":
+				_, region, err := cloudaws.GetLBNameFromHostname(lbIngress.Hostname)
 				if err != nil {
 					klog.Error(err)
-					continue INGRESS
+					return reconcile.Result{}, err
 				}
-				switch provider {
-				case "aws":
-					_, region, err := cloudaws.GetLBNameFromHostname(lbIngress.Hostname)
+				cloud := cloudaws.NewAWS(region)
+				accelerators, err := cloud.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, "ingress", ingress.Namespace, ingress.Name)
+				if err != nil {
+					klog.Error(err)
+					return reconcile.Result{}, err
+				}
+				for _, a := range accelerators {
+					klog.Infof("Ingress %s/%s does not have the annotation, but Global Accelerator exists, so deleting this", ingress.Namespace, ingress.Name)
+					err = cloud.CleanupGlobalAccelerator(ctx, *a.AcceleratorArn)
 					if err != nil {
 						klog.Error(err)
 						return reconcile.Result{}, err
 					}
-					cloud := cloudaws.NewAWS(region)
-					err = cloud.CleanupGlobalAccelerator(ctx, acceleratorArn)
-					if err != nil {
-						klog.Error(err)
-						return reconcile.Result{}, err
-					}
-					delete(correspondence, lbIngress.Hostname)
 					deleted++
-				default:
-					klog.Warningf("Not implemented for %s", provider)
-					continue INGRESS
 				}
+
+			default:
+				klog.Warningf("Not implemented for %s", provider)
+				continue INGRESS
 			}
 		}
-		if deleted > 0 {
-			if err := c.updateCorrespondence(ctx, correspondence); err != nil {
-				klog.Error(err)
-				return reconcile.Result{}, err
-			}
-		} else {
+		if deleted == 0 {
 			klog.Infof("%s/%s does not have the annotation, so skip it", ingress.Namespace, ingress.Name)
 		}
 		return reconcile.Result{}, nil
 	}
 
 	for i := range ingress.Status.LoadBalancer.Ingress {
-		ing := ingress.Status.LoadBalancer.Ingress[i]
-		provider, err := detectCloudProvider(ing.Hostname)
+		lbIngress := ingress.Status.LoadBalancer.Ingress[i]
+		provider, err := detectCloudProvider(lbIngress.Hostname)
 		if err != nil {
 			klog.Error(err)
 			continue
@@ -128,13 +111,13 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 		switch provider {
 		case "aws":
 			// Get load balancer name and region from the hostname
-			name, region, err := cloudaws.GetLBNameFromHostname(ing.Hostname)
+			name, region, err := cloudaws.GetLBNameFromHostname(lbIngress.Hostname)
 			if err != nil {
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
 			cloud := cloudaws.NewAWS(region)
-			acceleratorArn, retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &ing, name, region, correspondence[ing.Hostname])
+			retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, name, region)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -144,15 +127,11 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 					RequeueAfter: retryAfter,
 				}, nil
 			}
-			if acceleratorArn != nil {
-				correspondence[ing.Hostname] = *acceleratorArn
-			}
 		default:
 			klog.Warningf("Not implemented for %s", provider)
 			continue
 		}
 	}
 
-	err = c.updateCorrespondence(ctx, correspondence)
-	return reconcile.Result{}, err
+	return reconcile.Result{}, nil
 }
