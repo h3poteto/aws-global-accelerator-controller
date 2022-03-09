@@ -8,6 +8,7 @@ import (
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -88,6 +89,7 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 						return reconcile.Result{}, err
 					}
 					deleted++
+					c.recorder.Eventf(ingress, corev1.EventTypeNormal, "GlobalAcceleratorDeleted", "The annotation does not exist, but Global Acclerator exists, so it is deleted: %s", *a.AcceleratorArn)
 				}
 
 			default:
@@ -117,7 +119,7 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 				return reconcile.Result{}, err
 			}
 			cloud := cloudaws.NewAWS(region)
-			retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, name, region)
+			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, name, region)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -126,6 +128,9 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 					Requeue:      true,
 					RequeueAfter: retryAfter,
 				}, nil
+			}
+			if created {
+				c.recorder.Eventf(ingress, corev1.EventTypeNormal, "GlobalAcceleratorCreated", "Global Acclerator is created: %s", *arn)
 			}
 		default:
 			klog.Warningf("Not implemented for %s", provider)
