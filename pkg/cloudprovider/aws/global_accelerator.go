@@ -16,39 +16,85 @@ import (
 )
 
 const (
-	globalAcceleratorManagedTagKey = "aws-global-accelerator-controller-managed"
+	globalAcceleratorManagedTagKey     = "aws-global-accelerator-controller-managed"
+	globalAcceleratorOwnerTagKey       = "aws-global-accelerator-owner"
+	globalAcceleratorTargetHostnameKey = "aws-global-accelerator-target-hostname"
 )
 
-func AcceleratorManagedTagValue(resource, ns, name string) string {
-	return resource + "-" + ns + "-" + name
+func acceleratorOwnerTagValue(resource, ns, name string) string {
+	return resource + "/" + ns + "/" + name
+}
+
+func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, resource, ns, name string) ([]*globalaccelerator.Accelerator, error) {
+	accelerators, err := a.listAccelerator(ctx)
+	if err != nil {
+		klog.Error(err)
+		return nil, err
+	}
+	res := []*globalaccelerator.Accelerator{}
+	for _, accelerator := range accelerators {
+		tags, err := a.listTagsForAccelerator(ctx, *accelerator.AcceleratorArn)
+		if err != nil {
+			return nil, err
+		}
+		if tagsContainsAllValues(tags, map[string]string{
+			globalAcceleratorManagedTagKey:     "true",
+			globalAcceleratorOwnerTagKey:       acceleratorOwnerTagValue(resource, ns, name),
+			globalAcceleratorTargetHostnameKey: hostname,
+		}) {
+			res = append(res, accelerator)
+		}
+	}
+	return res, nil
+}
+
+func (a *AWS) ListGlobalAcceletaroByResource(ctx context.Context, resource, ns, name string) ([]*globalaccelerator.Accelerator, error) {
+	accelerators, err := a.listAccelerator(ctx)
+	if err != nil {
+		klog.Error(err)
+		return nil, err
+	}
+	res := []*globalaccelerator.Accelerator{}
+	for _, accelerator := range accelerators {
+		tags, err := a.listTagsForAccelerator(ctx, *accelerator.AcceleratorArn)
+		if err != nil {
+			return nil, err
+		}
+		if tagsContainsAllValues(tags, map[string]string{
+			globalAcceleratorManagedTagKey: "true",
+			globalAcceleratorOwnerTagKey:   acceleratorOwnerTagValue(resource, ns, name),
+		}) {
+			res = append(res, accelerator)
+		}
+	}
+	return res, nil
 }
 
 func (a *AWS) EnsureGlobalAcceleratorForService(
 	ctx context.Context,
 	svc *corev1.Service,
-	ingress *corev1.LoadBalancerIngress,
-	lbName, region, acceleratorArn string,
-) (*string, time.Duration, error) {
+	lbIngress *corev1.LoadBalancerIngress,
+	lbName, region string,
+) (time.Duration, error) {
 	lb, err := a.getLoadBalancer(ctx, lbName)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
-	if *lb.DNSName != ingress.Hostname {
-		return nil, 0, fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
+	if *lb.DNSName != lbIngress.Hostname {
+		return 0, fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
 	}
 	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
 		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
-		return nil, 30 * time.Second, nil
+		return 30 * time.Second, nil
 	}
 
 	klog.Infof("LoadBalancer is %s", *lb.LoadBalancerArn)
-	var accelerator *globalaccelerator.Accelerator
-	// Confirm Global Accelerator
-	if acceleratorArn != "" {
-		accelerator, _ = a.getAccelerator(ctx, acceleratorArn)
-	}
 
-	if accelerator == nil {
+	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, "service", svc.Namespace, svc.Name)
+	if err != nil {
+		return 0, err
+	}
+	if len(accelerators) == 0 {
 		// Create Global Accelerator
 		klog.Infof("Creating Global Accelerator for %s", *lb.DNSName)
 		createdArn, err := a.createGlobalAcceleratorForService(ctx, lb, svc, region)
@@ -58,47 +104,47 @@ func (a *AWS) EnsureGlobalAcceleratorForService(
 				klog.Warningf("Failed to create Global Accelerator, but some resources are created, so cleanup %s", *createdArn)
 				a.CleanupGlobalAccelerator(ctx, *createdArn)
 			}
-			return nil, 0, err
+			return 0, err
 		}
-		return createdArn, 0, nil
-	} else {
+		return 0, nil
+	}
+	for _, accelerator := range accelerators {
 		// Update Global Accelerator
 		if err := a.updateGlobalAcceleratorForService(ctx, accelerator, lb, svc, region); err != nil {
-			return nil, 0, err
+			return 0, err
 		}
-		return accelerator.AcceleratorArn, 0, nil
 	}
+	return 0, nil
 }
 
 func (a *AWS) EnsureGlobalAcceleratorForIngress(
 	ctx context.Context,
 	ingress *networkingv1.Ingress,
 	lbIngress *corev1.LoadBalancerIngress,
-	lbName, region, acceleratorArn string,
-) (*string, time.Duration, error) {
+	lbName, region string,
+) (time.Duration, error) {
 	lb, err := a.getLoadBalancer(ctx, lbName)
 	if err != nil {
 		klog.Error(err)
-		return nil, 0, err
+		return 0, err
 	}
 	if *lb.DNSName != lbIngress.Hostname {
 		err := fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
 		klog.Error(err)
-		return nil, 0, err
+		return 0, err
 	}
 	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
 		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
-		return nil, 30 * time.Second, nil
+		return 30 * time.Second, nil
 	}
 
 	klog.Infof("LoadBalancer is %s", *lb.LoadBalancerArn)
-	var accelerator *globalaccelerator.Accelerator
-	// Confirm Global Accelerator
-	if acceleratorArn != "" {
-		accelerator, _ = a.getAccelerator(ctx, acceleratorArn)
-	}
 
-	if accelerator == nil {
+	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, "ingress", ingress.Namespace, ingress.Name)
+	if err != nil {
+		return 0, err
+	}
+	if len(accelerators) == 0 {
 		// Create Global Accelerator
 		klog.Infof("Creating Global Accelerator for %s", *lb.DNSName)
 		createdArn, err := a.createGlobalAcceleratorForIngress(ctx, lb, ingress, region)
@@ -108,21 +154,23 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 				klog.Warningf("Failed to create Global Accelerator, but some resources are created, so cleanup %s", *createdArn)
 				a.CleanupGlobalAccelerator(ctx, *createdArn)
 			}
-			return nil, 0, err
+			return 0, err
 		}
-		return createdArn, 0, nil
-	} else {
+		return 0, nil
+	}
+
+	for _, accelerator := range accelerators {
 		// Update Global Accelerator
 		if err := a.updateGlobalAcceleratorForIngress(ctx, accelerator, lb, ingress, region); err != nil {
 			klog.Error(err)
-			return nil, 0, err
+			return 0, err
 		}
-		return accelerator.AcceleratorArn, 0, nil
 	}
+	return 0, nil
 }
 
 func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2.LoadBalancer, svc *corev1.Service, region string) (*string, error) {
-	accelerator, err := a.createAccelerator(ctx, AcceleratorManagedTagValue("service", svc.Namespace, svc.Name))
+	accelerator, err := a.createAccelerator(ctx, "service"+"-"+svc.Namespace+"-"+svc.Name, acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +189,7 @@ func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2.L
 }
 
 func (a *AWS) createGlobalAcceleratorForIngress(ctx context.Context, lb *elbv2.LoadBalancer, ingress *networkingv1.Ingress, region string) (*string, error) {
-	accelerator, err := a.createAccelerator(ctx, AcceleratorManagedTagValue("ingress", ingress.Namespace, ingress.Name))
+	accelerator, err := a.createAccelerator(ctx, "ingress"+"-"+ingress.Namespace+"-"+ingress.Name, acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName)
 	if err != nil {
 		return nil, err
 	}
@@ -360,27 +408,6 @@ func endpointContainsLB(endpoint *globalaccelerator.EndpointGroup, lb *elbv2.Loa
 	return false
 }
 
-func (a *AWS) ListGlobalAcceleratorByTag(ctx context.Context, tagValue string) ([]*globalaccelerator.Accelerator, error) {
-	accelerators, err := a.listAccelerator(ctx)
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-	res := []*globalaccelerator.Accelerator{}
-	for _, accelerator := range accelerators {
-		tags, err := a.listTagsForAccelerator(ctx, *accelerator.AcceleratorArn)
-		if err != nil {
-			return nil, err
-		}
-		for _, t := range tags {
-			if *t.Key == globalAcceleratorManagedTagKey && *t.Value == tagValue {
-				res = append(res, accelerator)
-			}
-		}
-	}
-	return res, nil
-}
-
 func listenerForService(svc *corev1.Service) ([]int64, string) {
 	ports := []int64{}
 	protocol := "TCP"
@@ -409,6 +436,19 @@ func listenerForIngress(ingress *networkingv1.Ingress) ([]int64, string) {
 		}
 	}
 	return ports, protocol
+}
+
+func tagsContainsAllValues(tags []*globalaccelerator.Tag, targetTags map[string]string) bool {
+	actual := map[string]string{}
+	for _, t := range tags {
+		actual[*t.Key] = *t.Value
+	}
+	for key, value := range targetTags {
+		if actual[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 //---------------------------------
@@ -447,7 +487,7 @@ func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]*global
 	return res.Tags, nil
 }
 
-func (a *AWS) createAccelerator(ctx context.Context, name string) (*globalaccelerator.Accelerator, error) {
+func (a *AWS) createAccelerator(ctx context.Context, name string, owner string, hostname string) (*globalaccelerator.Accelerator, error) {
 	klog.Infof("Creating Global Accelerator %s", name)
 	acceleratorInput := &globalaccelerator.CreateAcceleratorInput{
 		Enabled:       aws.Bool(true),
@@ -456,7 +496,15 @@ func (a *AWS) createAccelerator(ctx context.Context, name string) (*globalaccele
 		Tags: []*globalaccelerator.Tag{
 			&globalaccelerator.Tag{
 				Key:   aws.String(globalAcceleratorManagedTagKey),
-				Value: aws.String(name),
+				Value: aws.String("true"),
+			},
+			&globalaccelerator.Tag{
+				Key:   aws.String(globalAcceleratorOwnerTagKey),
+				Value: aws.String(owner),
+			},
+			&globalaccelerator.Tag{
+				Key:   aws.String(globalAcceleratorTargetHostnameKey),
+				Value: aws.String(hostname),
 			},
 		},
 	}

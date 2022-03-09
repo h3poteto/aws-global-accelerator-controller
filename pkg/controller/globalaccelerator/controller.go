@@ -26,7 +26,6 @@ import (
 )
 
 const controllerAgentName = "global-accelerator-controller"
-const dataConfigMap = "aws-global-accelerator-controller-data"
 
 type GlobalAcceleratorConfig struct {
 	Workers   int
@@ -48,7 +47,6 @@ type GlobalAcceleratorController struct {
 	recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingress,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
