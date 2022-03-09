@@ -87,6 +87,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 						return reconcile.Result{}, err
 					}
 					deleted++
+					c.recorder.Eventf(svc, corev1.EventTypeNormal, "GlobalAcceleratorDeleted", "The annotation does not exist, but Global Acclerator exists, so it is deleted: %s", *a.AcceleratorArn)
 				}
 
 			default:
@@ -116,7 +117,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 				return reconcile.Result{}, err
 			}
 			cloud := cloudaws.NewAWS(region)
-			retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &lbIngress, name, region)
+			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &lbIngress, name, region)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -125,6 +126,9 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 					Requeue:      true,
 					RequeueAfter: retryAfter,
 				}, nil
+			}
+			if created {
+				c.recorder.Eventf(svc, corev1.EventTypeNormal, "GlobalAcceleratorCreated", "Global Acclerator is created: %s", *arn)
 			}
 		default:
 			klog.Warningf("Not implemented for %s", provider)
