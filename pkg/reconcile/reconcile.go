@@ -64,7 +64,7 @@ func reconcileHandler(req interface{}, workqueue workqueue.RateLimitingInterface
 	case err != nil:
 		return fmt.Errorf("Unable to retrieve %q from store: %v", key, err)
 	default:
-		res, err = processCreateOrUpdate(ctx, obj)
+		res, err = processCreateOrUpdate(ctx, obj.DeepCopyObject())
 	}
 
 	switch {

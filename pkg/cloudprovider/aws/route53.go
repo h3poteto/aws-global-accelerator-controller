@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/globalaccelerator"
@@ -21,21 +22,21 @@ func (a *AWS) EnsureRoute53ForService(
 	svc *corev1.Service,
 	lbIngress *corev1.LoadBalancerIngress,
 	hostnames []string,
-) (bool, error) {
+) (bool, time.Duration, error) {
 	// Get Global Accelerator
 	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, "service", svc.Namespace, svc.Name)
 	if err != nil {
 		klog.Error(err)
-		return false, err
+		return false, 0, err
 	}
 	if len(accelerators) > 1 {
 		err := fmt.Errorf("Too many Global Accelerators for %s", lbIngress.Hostname)
 		klog.Error(err)
-		return false, err
+		return false, 1 * time.Minute, nil
 	} else if len(accelerators) == 0 {
 		err := fmt.Errorf("Could not find Global Accelerato for %s", lbIngress.Hostname)
 		klog.Error(err)
-		return false, err
+		return false, 1 * time.Minute, nil
 	}
 	accelerator := accelerators[0]
 
@@ -46,7 +47,7 @@ HOSTNAMES:
 		hostedZone, err := a.getHostedZone(ctx, hostname)
 		if err != nil {
 			klog.Error(err)
-			return false, err
+			return false, 0, err
 		}
 		klog.Infof("HostedZone is %s", *hostedZone.Id)
 
@@ -54,25 +55,25 @@ HOSTNAMES:
 		records, err := a.findOwneredARecordSets(ctx, hostedZone, route53OwnerValue("service", svc.Namespace, svc.Name))
 		if err != nil {
 			klog.Error(err)
-			return false, err
+			return false, 0, err
 		}
 
 		if len(records) > 1 {
 			err := fmt.Errorf("Too many records for %s", hostname)
 			klog.Error(err)
-			return false, err
+			return false, 0, err
 		} else if len(records) == 0 {
 			// Create a new record set
 			klog.Infof("Creating record for %s with %s", hostname, *accelerator.AcceleratorArn)
 			err = a.createMetadataRecordSet(ctx, hostedZone, hostname, "service", svc.Namespace, svc.Name)
 			if err != nil {
 				klog.Error(err)
-				return false, err
+				return false, 0, err
 			}
 			err = a.createRecordSet(ctx, hostedZone, hostname, accelerator)
 			if err != nil {
 				klog.Error(err)
-				return false, err
+				return false, 0, err
 			}
 			created = true
 		} else {
@@ -82,14 +83,14 @@ HOSTNAMES:
 			err = a.updateRecordSet(ctx, hostedZone, hostname, accelerator)
 			if err != nil {
 				klog.Error(err)
-				return false, err
+				return false, 0, err
 			}
 			klog.Infof("RecordSet for %s is updated", hostname)
 		}
 	}
 
 	klog.Infof("All records are synced for %s/%s", svc.Namespace, svc.Name)
-	return created, nil
+	return created, 0, nil
 }
 
 func (a *AWS) CleanupRecordSetForService(ctx context.Context, ns, name string) error {
