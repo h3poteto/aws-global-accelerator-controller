@@ -58,47 +58,20 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 	}
 
 	if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
-		deleted := 0
-	INGRESS:
-		for i := range svc.Status.LoadBalancer.Ingress {
-			lbIngress := svc.Status.LoadBalancer.Ingress[i]
-			provider, err := cloudprovider.DetectCloudProvider(lbIngress.Hostname)
-			if err != nil {
+		cloud := cloudaws.NewAWS("us-west-2")
+		accelerators, err := cloud.ListGlobalAcceletaroByResource(ctx, "service", svc.Namespace, svc.Name)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		for _, accelerator := range accelerators {
+			if err := cloud.CleanupGlobalAccelerator(ctx, *accelerator.AcceleratorArn); err != nil {
 				klog.Error(err)
-				continue INGRESS
-			}
-			switch provider {
-			case "aws":
-				_, region, err := cloudaws.GetLBNameFromHostname(lbIngress.Hostname)
-				if err != nil {
-					klog.Error(err)
-					return reconcile.Result{}, err
-				}
-				cloud := cloudaws.NewAWS(region)
-				accelerators, err := cloud.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, "service", svc.Namespace, svc.Name)
-				if err != nil {
-					klog.Error(err)
-					return reconcile.Result{}, err
-				}
-				for _, a := range accelerators {
-					klog.Infof("Service %s/%s does not have the annotation, but Global Accelerator exists, so deleting this", svc.Namespace, svc.Name)
-					err = cloud.CleanupGlobalAccelerator(ctx, *a.AcceleratorArn)
-					if err != nil {
-						klog.Error(err)
-						return reconcile.Result{}, err
-					}
-					deleted++
-					c.recorder.Eventf(svc, corev1.EventTypeNormal, "GlobalAcceleratorDeleted", "The annotation does not exist, but Global Acclerator exists, so it is deleted: %s", *a.AcceleratorArn)
-				}
-
-			default:
-				klog.Warningf("Not implemented for %s", provider)
-				continue INGRESS
+				return reconcile.Result{}, err
 			}
 		}
-		if deleted == 0 {
-			klog.Infof("%s/%s does not have the annotation, so skip it", svc.Namespace, svc.Name)
-		}
+		klog.Infof("Delete Global Accelerator for Service %s/%s", svc.Namespace, svc.Name)
+		c.recorder.Event(svc, corev1.EventTypeNormal, "GlobalAcceleratorDeleted", "Global Accelerators are deleted")
 		return reconcile.Result{}, nil
 	}
 

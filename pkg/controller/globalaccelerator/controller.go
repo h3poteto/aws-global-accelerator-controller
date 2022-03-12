@@ -5,10 +5,12 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -85,7 +87,7 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 
 func (c *GlobalAcceleratorController) addSereviceNotification(obj interface{}) {
 	svc := obj.(*corev1.Service)
-	if wasLoadBalancerService(svc) {
+	if wasLoadBalancerService(svc) && hasManagedAnnotation(svc) {
 		klog.V(4).Infof("Service %s/%s is created", svc.Namespace, svc.Name)
 		c.enqueueService(svc)
 	}
@@ -95,10 +97,13 @@ func (c *GlobalAcceleratorController) updateServiceNotification(old, new interfa
 	if reflect.DeepEqual(old, new) {
 		return
 	}
-	svc := new.(*corev1.Service)
-	if wasLoadBalancerService(svc) {
-		klog.V(4).Infof("Service %s/%s is updated", svc.Namespace, svc.Name)
-		c.enqueueService(svc)
+	oldSvc := old.(*corev1.Service)
+	newSvc := new.(*corev1.Service)
+	if wasLoadBalancerService(newSvc) {
+		if hasManagedAnnotation(newSvc) || managedAnnotationChanged(oldSvc, newSvc) {
+			klog.V(4).Infof("Service %s/%s is updated", newSvc.Namespace, newSvc.Name)
+			c.enqueueService(newSvc)
+		}
 	}
 }
 
@@ -125,7 +130,7 @@ func (c *GlobalAcceleratorController) deleteServiceNotification(obj interface{})
 
 func (c *GlobalAcceleratorController) addIngressNotification(obj interface{}) {
 	ingress := obj.(*networkingv1.Ingress)
-	if wasALBIngress(ingress) {
+	if wasALBIngress(ingress) && hasManagedAnnotation(ingress) {
 		klog.V(4).Infof("Ingress %s/%s is created", ingress.Namespace, ingress.Name)
 		c.enqueueIngress(ingress)
 	}
@@ -135,10 +140,13 @@ func (c *GlobalAcceleratorController) updateIngressNotification(old, new interfa
 	if reflect.DeepEqual(old, new) {
 		return
 	}
-	ingress := new.(*networkingv1.Ingress)
-	if wasALBIngress(ingress) {
-		klog.V(4).Infof("Ingress %s/%s is updated", ingress.Namespace, ingress.Name)
-		c.enqueueIngress(ingress)
+	oldIngress := old.(*networkingv1.Ingress)
+	newIngress := new.(*networkingv1.Ingress)
+	if wasALBIngress(newIngress) {
+		if hasManagedAnnotation(newIngress) || managedAnnotationChanged(oldIngress, newIngress) {
+			klog.V(4).Infof("Ingress %s/%s is updated", newIngress.Namespace, newIngress.Name)
+			c.enqueueIngress(newIngress)
+		}
 	}
 }
 
@@ -236,4 +244,15 @@ func (c *GlobalAcceleratorController) keyToIngress(key string) (runtime.Object, 
 	}
 
 	return c.ingressLister.Ingresses(ns).Get(name)
+}
+
+func hasManagedAnnotation(obj metav1.Object) bool {
+	_, ok := obj.GetAnnotations()[apis.AWSGlobalAcceleratorManagedAnnotation]
+	return ok
+}
+
+func managedAnnotationChanged(old, new metav1.Object) bool {
+	_, oldHas := old.GetAnnotations()[apis.AWSGlobalAcceleratorManagedAnnotation]
+	_, newHas := new.GetAnnotations()[apis.AWSGlobalAcceleratorManagedAnnotation]
+	return oldHas != newHas
 }
