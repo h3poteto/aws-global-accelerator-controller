@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
@@ -16,7 +17,7 @@ import (
 
 func wasLoadBalancerService(svc *corev1.Service) bool {
 	if svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
-		if _, ok := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"]; ok || svc.Spec.LoadBalancerClass != nil {
+		if _, ok := svc.Annotations[apis.AWSLoadBalancerTypeAnnotation]; ok || svc.Spec.LoadBalancerClass != nil {
 			return true
 		}
 	}
@@ -56,12 +57,12 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		return reconcile.Result{}, nil
 	}
 
-	if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorEnabledAnnotation]; !ok {
+	if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
 		deleted := 0
 	INGRESS:
 		for i := range svc.Status.LoadBalancer.Ingress {
 			lbIngress := svc.Status.LoadBalancer.Ingress[i]
-			provider, err := detectCloudProvider(lbIngress.Hostname)
+			provider, err := cloudprovider.DetectCloudProvider(lbIngress.Hostname)
 			if err != nil {
 				klog.Error(err)
 				continue INGRESS
@@ -103,7 +104,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 
 	for i := range svc.Status.LoadBalancer.Ingress {
 		lbIngress := svc.Status.LoadBalancer.Ingress[i]
-		provider, err := detectCloudProvider(lbIngress.Hostname)
+		provider, err := cloudprovider.DetectCloudProvider(lbIngress.Hostname)
 		if err != nil {
 			klog.Error(err)
 			continue

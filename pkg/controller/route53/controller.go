@@ -64,7 +64,7 @@ func NewRoute53Controller(kubeclient kubernetes.Interface, informerFactory infor
 
 func (c *Route53Controller) addServiceNotification(obj interface{}) {
 	svc := obj.(*corev1.Service)
-	if wasLoadBalancerService(svc) {
+	if wasLoadBalancerService(svc) && hasHostnameAnnotation(svc) {
 		klog.V(4).Infof("Service %s/%s is created", svc.Namespace, svc.Name)
 		c.enqueueService(svc)
 	}
@@ -74,10 +74,13 @@ func (c *Route53Controller) updateServiceNotification(old, new interface{}) {
 	if reflect.DeepEqual(old, new) {
 		return
 	}
-	svc := new.(*corev1.Service)
-	if wasLoadBalancerService(svc) {
-		klog.V(4).Infof("Service %s/%s is updated", svc.Namespace, svc.Name)
-		c.enqueueService(svc)
+	oldSvc := old.(*corev1.Service)
+	newSvc := new.(*corev1.Service)
+	if wasLoadBalancerService(newSvc) {
+		if hasHostnameAnnotation(newSvc) || hostnameAnnotationChanged(oldSvc, newSvc) {
+			klog.V(4).Infof("Service %s/%s is updated", newSvc.Namespace, newSvc.Name)
+			c.enqueueService(newSvc)
+		}
 	}
 }
 

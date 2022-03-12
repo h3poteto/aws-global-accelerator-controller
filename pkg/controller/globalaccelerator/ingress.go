@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
@@ -19,7 +20,7 @@ func wasALBIngress(ingress *networkingv1.Ingress) bool {
 	if ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == "alb" {
 		return true
 	}
-	if _, ok := ingress.Annotations["kubernetes.io/ingress.class"]; ok {
+	if _, ok := ingress.Annotations[apis.IngressClassAnnotation]; ok {
 		return true
 	}
 	return false
@@ -58,12 +59,12 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 		return reconcile.Result{}, nil
 	}
 
-	if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorEnabledAnnotation]; !ok {
+	if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
 		deleted := 0
 	INGRESS:
 		for i := range ingress.Status.LoadBalancer.Ingress {
 			lbIngress := ingress.Status.LoadBalancer.Ingress[i]
-			provider, err := detectCloudProvider(lbIngress.Hostname)
+			provider, err := cloudprovider.DetectCloudProvider(lbIngress.Hostname)
 			if err != nil {
 				klog.Error(err)
 				continue INGRESS
@@ -105,7 +106,7 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 
 	for i := range ingress.Status.LoadBalancer.Ingress {
 		lbIngress := ingress.Status.LoadBalancer.Ingress[i]
-		provider, err := detectCloudProvider(lbIngress.Hostname)
+		provider, err := cloudprovider.DetectCloudProvider(lbIngress.Hostname)
 		if err != nil {
 			klog.Error(err)
 			continue

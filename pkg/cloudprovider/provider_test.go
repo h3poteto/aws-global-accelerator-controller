@@ -1,4 +1,4 @@
-package globalaccelerator
+package cloudprovider
 
 import (
 	"log"
@@ -19,7 +19,7 @@ func TestDetectCloudProvider(t *testing.T) {
 	}
 	for _, c := range cases {
 		log.Printf("Running CASE: %s", c.title)
-		provider, err := detectCloudProvider(c.hostname)
+		provider, err := DetectCloudProvider(c.hostname)
 		if err != nil {
 			t.Errorf("CASE %s: error has occur: %v", c.title, err)
 			continue

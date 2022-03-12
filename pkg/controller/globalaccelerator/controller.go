@@ -3,7 +3,6 @@ package globalaccelerator
 import (
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
@@ -28,8 +27,7 @@ import (
 const controllerAgentName = "global-accelerator-controller"
 
 type GlobalAcceleratorConfig struct {
-	Workers   int
-	Namespace string
+	Workers int
 }
 
 type GlobalAcceleratorController struct {
@@ -41,8 +39,6 @@ type GlobalAcceleratorController struct {
 
 	serviceQueue workqueue.RateLimitingInterface
 	ingressQueue workqueue.RateLimitingInterface
-
-	namespace string
 
 	recorder record.EventRecorder
 }
@@ -62,7 +58,6 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 		recorder:     recorder,
 		serviceQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),
 		ingressQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-ingress"),
-		namespace:    config.Namespace,
 	}
 	{
 		f := informerFactory.Core().V1().Services()
@@ -241,15 +236,4 @@ func (c *GlobalAcceleratorController) keyToIngress(key string) (runtime.Object, 
 	}
 
 	return c.ingressLister.Ingresses(ns).Get(name)
-}
-
-func detectCloudProvider(hostname string) (string, error) {
-	parts := strings.Split(hostname, ".")
-	domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
-	switch domain {
-	case "amazonaws.com":
-		return "aws", nil
-	default:
-		return "", fmt.Errorf("Unknown cloud provider: %s", domain)
-	}
 }
