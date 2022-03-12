@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/globalaccelerator"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/route53"
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -17,6 +18,7 @@ type manager struct{}
 
 type ControllerConfig struct {
 	GlobalAccelerator *globalaccelerator.GlobalAcceleratorConfig
+	Route53           *route53.Route53Config
 }
 
 func NewManager() *manager {
@@ -28,6 +30,7 @@ type InitFunc func(kubeClient kubernetes.Interface, informerFactory informers.Sh
 func NewControllerInitializers() map[string]InitFunc {
 	controllers := map[string]InitFunc{}
 	controllers["global-accelerator-controller"] = startGlobalAcceleratorController
+	controllers["route53-controller"] = startRoute53Controller
 	return controllers
 }
 

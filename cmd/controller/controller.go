@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/globalaccelerator"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/route53"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/leaderelection"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/manager"
 	"github.com/spf13/cobra"
@@ -54,8 +55,10 @@ func (o *options) run(cmd *cobra.Command, args []string) {
 	}
 	config := manager.ControllerConfig{
 		GlobalAccelerator: &globalaccelerator.GlobalAcceleratorConfig{
-			Workers:   o.workers,
-			Namespace: ns,
+			Workers: o.workers,
+		},
+		Route53: &route53.Route53Config{
+			Workers: o.workers,
 		},
 	}
 
