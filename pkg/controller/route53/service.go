@@ -88,9 +88,15 @@ func (c *Route53Controller) processServiceCreateOrUpdate(ctx context.Context, ob
 				return reconcile.Result{}, err
 			}
 			cloud := cloudaws.NewAWS(region)
-			created, err := cloud.EnsureRoute53ForService(ctx, svc, &lbIngress, hostnames)
+			created, retryAfter, err := cloud.EnsureRoute53ForService(ctx, svc, &lbIngress, hostnames)
 			if err != nil {
 				return reconcile.Result{}, err
+			}
+			if retryAfter > 0 {
+				return reconcile.Result{
+					Requeue:      true,
+					RequeueAfter: retryAfter,
+				}, nil
 			}
 			if created {
 				c.recorder.Eventf(svc, corev1.EventTypeNormal, "Route53RecourdCreated", "Route53 record set is created: %s", hostnames)
