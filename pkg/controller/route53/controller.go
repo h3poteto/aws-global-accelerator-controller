@@ -5,8 +5,11 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
+
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -150,4 +153,15 @@ func (c *Route53Controller) keyToService(key string) (runtime.Object, error) {
 	}
 
 	return c.serviceLister.Services(ns).Get(name)
+}
+
+func hasHostnameAnnotation(obj metav1.Object) bool {
+	_, ok := obj.GetAnnotations()[apis.Route53HostnameAnnotation]
+	return ok
+}
+
+func hostnameAnnotationChanged(old, new metav1.Object) bool {
+	_, oldHas := old.GetAnnotations()[apis.Route53HostnameAnnotation]
+	_, newHas := new.GetAnnotations()[apis.Route53HostnameAnnotation]
+	return oldHas != newHas
 }

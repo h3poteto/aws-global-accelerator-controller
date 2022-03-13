@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/globalaccelerator"
 	"github.com/aws/aws-sdk-go/service/route53"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -23,8 +24,26 @@ func (a *AWS) EnsureRoute53ForService(
 	lbIngress *corev1.LoadBalancerIngress,
 	hostnames []string,
 ) (bool, time.Duration, error) {
+	return a.ensureRoute53(ctx, lbIngress, hostnames, "service", svc.Namespace, svc.Name)
+}
+
+func (a *AWS) EnsureRoute53ForIngress(
+	ctx context.Context,
+	ingress *networkingv1.Ingress,
+	lbIngress *corev1.LoadBalancerIngress,
+	hostnames []string,
+) (bool, time.Duration, error) {
+	return a.ensureRoute53(ctx, lbIngress, hostnames, "ingress", ingress.Namespace, ingress.Name)
+}
+
+func (a *AWS) ensureRoute53(
+	ctx context.Context,
+	lbIngress *corev1.LoadBalancerIngress,
+	hostnames []string,
+	resource, ns, name string,
+) (bool, time.Duration, error) {
 	// Get Global Accelerator
-	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, "service", svc.Namespace, svc.Name)
+	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, resource, ns, name)
 	if err != nil {
 		klog.Error(err)
 		return false, 0, err
@@ -52,7 +71,7 @@ HOSTNAMES:
 		klog.Infof("HostedZone is %s", *hostedZone.Id)
 
 		klog.Infof("Finding record sets for HostedZone %s", *hostedZone.Id)
-		records, err := a.findOwneredARecordSets(ctx, hostedZone, route53OwnerValue("service", svc.Namespace, svc.Name))
+		records, err := a.findOwneredARecordSets(ctx, hostedZone, route53OwnerValue(resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return false, 0, err
@@ -65,7 +84,7 @@ HOSTNAMES:
 		} else if len(records) == 0 {
 			// Create a new record set
 			klog.Infof("Creating record for %s with %s", hostname, *accelerator.AcceleratorArn)
-			err = a.createMetadataRecordSet(ctx, hostedZone, hostname, "service", svc.Namespace, svc.Name)
+			err = a.createMetadataRecordSet(ctx, hostedZone, hostname, resource, ns, name)
 			if err != nil {
 				klog.Error(err)
 				return false, 0, err
@@ -89,18 +108,18 @@ HOSTNAMES:
 		}
 	}
 
-	klog.Infof("All records are synced for %s/%s", svc.Namespace, svc.Name)
+	klog.Infof("All records are synced for %s %s/%s", resource, ns, name)
 	return created, 0, nil
 }
 
-func (a *AWS) CleanupRecordSetForService(ctx context.Context, ns, name string) error {
+func (a *AWS) CleanupRecordSet(ctx context.Context, resource, ns, name string) error {
 	zones, err := a.listAllHostedZone(ctx)
 	if err != nil {
 		klog.Error(err)
 		return err
 	}
 	for _, zone := range zones {
-		records, err := a.findOwneredARecordSets(ctx, zone, route53OwnerValue("service", ns, name))
+		records, err := a.findOwneredARecordSets(ctx, zone, route53OwnerValue(resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
@@ -112,7 +131,7 @@ func (a *AWS) CleanupRecordSetForService(ctx context.Context, ns, name string) e
 			}
 			klog.Infof("Record set %s: %s is deleted", *record.Name, *record.Type)
 		}
-		records, err = a.findOwneredMetadataRecordSets(ctx, zone, route53OwnerValue("service", ns, name))
+		records, err = a.findOwneredMetadataRecordSets(ctx, zone, route53OwnerValue(resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
