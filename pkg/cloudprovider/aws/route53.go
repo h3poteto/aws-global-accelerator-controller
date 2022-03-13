@@ -166,7 +166,7 @@ func (a *AWS) deleteRecord(ctx context.Context, hostedZone *route53.HostedZone, 
 		ChangeBatch: &route53.ChangeBatch{
 			Changes: []*route53.Change{
 				&route53.Change{
-					Action:            aws.String("DELETE"),
+					Action:            aws.String(route53.ChangeActionDelete),
 					ResourceRecordSet: record,
 				},
 			},
@@ -215,10 +215,10 @@ func (a *AWS) createRecordSet(ctx context.Context, hostedZone *route53.HostedZon
 		ChangeBatch: &route53.ChangeBatch{
 			Changes: []*route53.Change{
 				&route53.Change{
-					Action: aws.String("CREATE"),
+					Action: aws.String(route53.ChangeActionCreate),
 					ResourceRecordSet: &route53.ResourceRecordSet{
 						Name: aws.String(hostname),
-						Type: aws.String("A"),
+						Type: aws.String(route53.RRTypeA),
 						AliasTarget: &route53.AliasTarget{
 							DNSName:              accelerator.DnsName,
 							EvaluateTargetHealth: aws.Bool(true),
@@ -241,10 +241,10 @@ func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53.H
 		ChangeBatch: &route53.ChangeBatch{
 			Changes: []*route53.Change{
 				&route53.Change{
-					Action: aws.String("CREATE"),
+					Action: aws.String(route53.ChangeActionCreate),
 					ResourceRecordSet: &route53.ResourceRecordSet{
 						Name: aws.String(hostname),
-						Type: aws.String("TXT"),
+						Type: aws.String(route53.RRTypeTxt),
 						TTL:  aws.Int64(300),
 						ResourceRecords: []*route53.ResourceRecord{
 							&route53.ResourceRecord{
@@ -266,10 +266,10 @@ func (a *AWS) updateRecordSet(ctx context.Context, hostedZone *route53.HostedZon
 		ChangeBatch: &route53.ChangeBatch{
 			Changes: []*route53.Change{
 				&route53.Change{
-					Action: aws.String("UPSERT"),
+					Action: aws.String(route53.ChangeActionUpsert),
 					ResourceRecordSet: &route53.ResourceRecordSet{
 						Name: aws.String(hostname),
-						Type: aws.String("A"),
+						Type: aws.String(route53.RRTypeA),
 						AliasTarget: &route53.AliasTarget{
 							DNSName:              accelerator.DnsName,
 							EvaluateTargetHealth: aws.Bool(true),
