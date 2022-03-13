@@ -4,13 +4,13 @@ metadata:
   name: h3poteto-test
   namespace: default
   annotations:
-    h3poteto.dev/aws-global-accelerator-enabled: "yes"
+    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
+    aws-global-accelerator-controller.h3poteto.dev/route53-hostname: "foo.h3poteto-test.dev,bar.h3poteto-test.dev"
     alb.ingress.kubernetes.io/scheme: internet-facing
 spec:
   ingressClassName: alb
   rules:
-  - host: h3poteto.dev
-    http:
+  -  http:
       paths:
       - pathType: Prefix
         path: "/"
@@ -19,14 +19,4 @@ spec:
             name: h3poteto-test
             port:
               number: 80
-  - host: k8s.h3poteto.dev
-    http:
-      paths:
-      - pathType: Prefix
-        path: "/"
-        backend:
-          service:
-            name: h3poteto-test
-            port:
-              number: 443
 

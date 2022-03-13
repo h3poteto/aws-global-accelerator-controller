@@ -17,16 +17,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func wasALBIngress(ingress *networkingv1.Ingress) bool {
-	if ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == "alb" {
-		return true
-	}
-	if _, ok := ingress.Annotations[apis.IngressClassAnnotation]; ok {
-		return true
-	}
-	return false
-}
-
 func (c *Route53Controller) processIngressDelete(ctx context.Context, key string) (reconcile.Result, error) {
 	klog.Infof("%v has been deleted", key)
 	ns, name, err := cache.SplitMetaNamespaceKey(key)

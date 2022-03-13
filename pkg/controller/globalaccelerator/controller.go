@@ -165,10 +165,8 @@ func (c *GlobalAcceleratorController) deleteIngressNotification(obj interface{})
 		}
 		klog.V(4).Infof("Recovered deleted object %q from tombstone", ingress.Name)
 	}
-	if wasALBIngress(ingress) {
-		klog.V(4).Infof("Deleting Ingress %s/%s", ingress.Namespace, ingress.Name)
-		c.enqueueIngress(ingress)
-	}
+	klog.V(4).Infof("Deleting Ingress %s/%s", ingress.Namespace, ingress.Name)
+	c.enqueueIngress(ingress)
 }
 
 func (c *GlobalAcceleratorController) enqueueService(obj *corev1.Service) {

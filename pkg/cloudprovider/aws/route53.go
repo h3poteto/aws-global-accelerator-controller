@@ -77,11 +77,8 @@ HOSTNAMES:
 			return false, 0, err
 		}
 
-		if len(records) > 1 {
-			err := fmt.Errorf("Too many records for %s", hostname)
-			klog.Error(err)
-			return false, 0, err
-		} else if len(records) == 0 {
+		record := findARecord(records, hostname)
+		if record == nil {
 			// Create a new record set
 			klog.Infof("Creating record for %s with %s", hostname, *accelerator.AcceleratorArn)
 			err = a.createMetadataRecordSet(ctx, hostedZone, hostname, resource, ns, name)
@@ -96,7 +93,7 @@ HOSTNAMES:
 			}
 			created = true
 		} else {
-			if !needRecordsUpdate(records[0], accelerator) {
+			if !needRecordsUpdate(record, accelerator) {
 				continue HOSTNAMES
 			}
 			err = a.updateRecordSet(ctx, hostedZone, hostname, accelerator)
@@ -331,6 +328,15 @@ func (a *AWS) getHostedZone(ctx context.Context, hostname string) (*route53.Host
 		}
 	}
 	return nil, fmt.Errorf("Could not find hosted zone for %s", hostname)
+}
+
+func findARecord(records []*route53.ResourceRecordSet, hostname string) *route53.ResourceRecordSet {
+	for _, record := range records {
+		if *record.Type == route53.RRTypeA && *record.Name == hostname+"." {
+			return record
+		}
+	}
+	return nil
 }
 
 func needRecordsUpdate(record *route53.ResourceRecordSet, accelerator *globalaccelerator.Accelerator) bool {
