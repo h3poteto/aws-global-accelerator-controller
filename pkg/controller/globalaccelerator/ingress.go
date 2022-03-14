@@ -35,7 +35,7 @@ func (c *GlobalAcceleratorController) processIngressDelete(ctx context.Context, 
 
 	cloud := cloudaws.NewAWS("us-west-2")
 
-	accelerators, err := cloud.ListGlobalAcceletaroByResource(ctx, "service", ns, name)
+	accelerators, err := cloud.ListGlobalAcceletaroByResource(ctx, "ingress", ns, name)
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -60,47 +60,22 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 	}
 
 	if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
-		deleted := 0
-	INGRESS:
-		for i := range ingress.Status.LoadBalancer.Ingress {
-			lbIngress := ingress.Status.LoadBalancer.Ingress[i]
-			provider, err := cloudprovider.DetectCloudProvider(lbIngress.Hostname)
+		cloud := cloudaws.NewAWS("us-west-2")
+		accelerators, err := cloud.ListGlobalAcceletaroByResource(ctx, "ingress", ingress.Namespace, ingress.Name)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		for _, a := range accelerators {
+			klog.Infof("Ingress %s/%s does not have the annotation, but Global Accelerator exists, so deleting this", ingress.Namespace, ingress.Name)
+			err = cloud.CleanupGlobalAccelerator(ctx, *a.AcceleratorArn)
 			if err != nil {
 				klog.Error(err)
-				continue INGRESS
-			}
-			switch provider {
-			case "aws":
-				_, region, err := cloudaws.GetLBNameFromHostname(lbIngress.Hostname)
-				if err != nil {
-					klog.Error(err)
-					return reconcile.Result{}, err
-				}
-				cloud := cloudaws.NewAWS(region)
-				accelerators, err := cloud.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, "ingress", ingress.Namespace, ingress.Name)
-				if err != nil {
-					klog.Error(err)
-					return reconcile.Result{}, err
-				}
-				for _, a := range accelerators {
-					klog.Infof("Ingress %s/%s does not have the annotation, but Global Accelerator exists, so deleting this", ingress.Namespace, ingress.Name)
-					err = cloud.CleanupGlobalAccelerator(ctx, *a.AcceleratorArn)
-					if err != nil {
-						klog.Error(err)
-						return reconcile.Result{}, err
-					}
-					deleted++
-					c.recorder.Eventf(ingress, corev1.EventTypeNormal, "GlobalAcceleratorDeleted", "The annotation does not exist, but Global Acclerator exists, so it is deleted: %s", *a.AcceleratorArn)
-				}
-
-			default:
-				klog.Warningf("Not implemented for %s", provider)
-				continue INGRESS
+				return reconcile.Result{}, err
 			}
 		}
-		if deleted == 0 {
-			klog.Infof("%s/%s does not have the annotation, so skip it", ingress.Namespace, ingress.Name)
-		}
+		klog.Infof("Delete Global Accelerator for Ingress %s/%s", ingress.Namespace, ingress.Name)
+		c.recorder.Event(ingress, corev1.EventTypeNormal, "GlobalAcceleratorDeleted", "Global Accelerator are deleted")
 		return reconcile.Result{}, nil
 	}
 
