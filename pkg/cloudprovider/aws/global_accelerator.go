@@ -76,7 +76,7 @@ func (a *AWS) EnsureGlobalAcceleratorForService(
 	lbIngress *corev1.LoadBalancerIngress,
 	lbName, region string,
 ) (*string, bool, time.Duration, error) {
-	lb, err := a.getLoadBalancer(ctx, lbName)
+	lb, err := a.GetLoadBalancer(ctx, lbName)
 	if err != nil {
 		return nil, false, 0, err
 	}
@@ -123,7 +123,7 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 	lbIngress *corev1.LoadBalancerIngress,
 	lbName, region string,
 ) (*string, bool, time.Duration, error) {
-	lb, err := a.getLoadBalancer(ctx, lbName)
+	lb, err := a.GetLoadBalancer(ctx, lbName)
 	if err != nil {
 		klog.Error(err)
 		return nil, false, 0, err
@@ -231,11 +231,11 @@ func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*gl
 	if err != nil {
 		return nil, nil, nil
 	}
-	listener, err := a.getListener(ctx, *accelerator.AcceleratorArn)
+	listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
 	if err != nil {
 		return accelerator, nil, nil
 	}
-	endpoint, err := a.getEndpointGroup(ctx, *listener.ListenerArn)
+	endpoint, err := a.GetEndpointGroup(ctx, *listener.ListenerArn)
 	if err != nil {
 		return accelerator, listener, nil
 	}
@@ -243,7 +243,7 @@ func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*gl
 }
 
 func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator *globalaccelerator.Accelerator, lb *elbv2.LoadBalancer, svc *corev1.Service, region string) error {
-	listener, err := a.getListener(ctx, *accelerator.AcceleratorArn)
+	listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
 	if err != nil {
 		var notFoundErr *globalaccelerator.ListenerNotFoundException
 		if errors.As(err, &notFoundErr) {
@@ -267,7 +267,7 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 			return err
 		}
 	}
-	endpoint, err := a.getEndpointGroup(ctx, *listener.ListenerArn)
+	endpoint, err := a.GetEndpointGroup(ctx, *listener.ListenerArn)
 	if err != nil {
 		var notFoundErr *globalaccelerator.EndpointGroupNotFoundException
 		if errors.As(err, &notFoundErr) {
@@ -295,7 +295,7 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 }
 
 func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator *globalaccelerator.Accelerator, lb *elbv2.LoadBalancer, ingress *networkingv1.Ingress, region string) error {
-	listener, err := a.getListener(ctx, *accelerator.AcceleratorArn)
+	listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
 	if err != nil {
 		var notFoundErr *globalaccelerator.ListenerNotFoundException
 		if errors.As(err, &notFoundErr) {
@@ -319,7 +319,7 @@ func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator
 			return err
 		}
 	}
-	endpoint, err := a.getEndpointGroup(ctx, *listener.ListenerArn)
+	endpoint, err := a.GetEndpointGroup(ctx, *listener.ListenerArn)
 	if err != nil {
 		var notFoundErr *globalaccelerator.EndpointGroupNotFoundException
 		if errors.As(err, &notFoundErr) {
@@ -562,7 +562,7 @@ func (a *AWS) deleteAccelerator(ctx context.Context, arn string) error {
 //---------------------------------
 // Lstener methods
 //---------------------------------
-func (a *AWS) getListener(ctx context.Context, acceleratorArn string) (*globalaccelerator.Listener, error) {
+func (a *AWS) GetListener(ctx context.Context, acceleratorArn string) (*globalaccelerator.Listener, error) {
 	input := &globalaccelerator.ListListenersInput{
 		AcceleratorArn: aws.String(acceleratorArn),
 		MaxResults:     aws.Int64(100),
@@ -638,7 +638,7 @@ func (a *AWS) deleteListener(ctx context.Context, arn string) error {
 //---------------------------------
 // EndpointGroup methods
 //---------------------------------
-func (a *AWS) getEndpointGroup(ctx context.Context, listenerArn string) (*globalaccelerator.EndpointGroup, error) {
+func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*globalaccelerator.EndpointGroup, error) {
 	input := &globalaccelerator.ListEndpointGroupsInput{
 		ListenerArn: aws.String(listenerArn),
 		MaxResults:  aws.Int64(100),

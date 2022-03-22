@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/elbv2"
 )
 
-func (a *AWS) getLoadBalancer(ctx context.Context, name string) (*elbv2.LoadBalancer, error) {
+func (a *AWS) GetLoadBalancer(ctx context.Context, name string) (*elbv2.LoadBalancer, error) {
 	input := &elbv2.DescribeLoadBalancersInput{
 		Names: []*string{
 			aws.String(name),
