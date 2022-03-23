@@ -32,6 +32,7 @@ This controller requires these permissions, so please assign this policy to the 
       "globalaccelerator:DescribeAccelerator",
       "globalaccelerator:ListAccelerators",
       "globalaccelerator:ListTagsForResource",
+      "globalaccelerator:TagResource",
       "globalaccelerator:CreateAccelerator",
       "globalaccelerator:UpdateAccelerator",
       "globalaccelerator:DeleteAccelerator",
