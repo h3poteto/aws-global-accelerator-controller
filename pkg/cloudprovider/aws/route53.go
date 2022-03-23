@@ -14,7 +14,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func route53OwnerValue(resource, ns, name string) string {
+func Route53OwnerValue(resource, ns, name string) string {
 	return "\"heritage=aws-global-accelerator-controller," + resource + "/" + ns + "/" + name + "\""
 }
 
@@ -63,7 +63,7 @@ func (a *AWS) ensureRoute53(
 HOSTNAMES:
 	for _, hostname := range hostnames {
 		// Find hosted zone
-		hostedZone, err := a.getHostedZone(ctx, hostname)
+		hostedZone, err := a.GetHostedZone(ctx, hostname)
 		if err != nil {
 			klog.Error(err)
 			return false, 0, err
@@ -71,7 +71,7 @@ HOSTNAMES:
 		klog.Infof("HostedZone is %s", *hostedZone.Id)
 
 		klog.Infof("Finding record sets for HostedZone %s", *hostedZone.Id)
-		records, err := a.findOwneredARecordSets(ctx, hostedZone, route53OwnerValue(resource, ns, name))
+		records, err := a.FindOwneredARecordSets(ctx, hostedZone, Route53OwnerValue(resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return false, 0, err
@@ -116,7 +116,7 @@ func (a *AWS) CleanupRecordSet(ctx context.Context, resource, ns, name string) e
 		return err
 	}
 	for _, zone := range zones {
-		records, err := a.findOwneredARecordSets(ctx, zone, route53OwnerValue(resource, ns, name))
+		records, err := a.FindOwneredARecordSets(ctx, zone, Route53OwnerValue(resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
@@ -128,7 +128,7 @@ func (a *AWS) CleanupRecordSet(ctx context.Context, resource, ns, name string) e
 			}
 			klog.Infof("Record set %s: %s is deleted", *record.Name, *record.Type)
 		}
-		records, err = a.findOwneredMetadataRecordSets(ctx, zone, route53OwnerValue(resource, ns, name))
+		records, err = a.findOwneredMetadataRecordSets(ctx, zone, Route53OwnerValue(resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
@@ -187,7 +187,7 @@ func (a *AWS) listAllHostedZone(ctx context.Context) ([]*route53.HostedZone, err
 	return res.HostedZones, nil
 }
 
-func (a *AWS) findOwneredARecordSets(ctx context.Context, hostedZone *route53.HostedZone, ownerValue string) ([]*route53.ResourceRecordSet, error) {
+func (a *AWS) FindOwneredARecordSets(ctx context.Context, hostedZone *route53.HostedZone, ownerValue string) ([]*route53.ResourceRecordSet, error) {
 	recordSets, err := a.listRecordSets(ctx, hostedZone.Id)
 	if err != nil {
 		return nil, err
@@ -248,7 +248,7 @@ func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53.H
 						TTL:  aws.Int64(300),
 						ResourceRecords: []*route53.ResourceRecord{
 							&route53.ResourceRecord{
-								Value: aws.String(route53OwnerValue(resource, ns, name)),
+								Value: aws.String(Route53OwnerValue(resource, ns, name)),
 							},
 						},
 					},
@@ -297,7 +297,7 @@ func (a *AWS) listRecordSets(ctx context.Context, hostedZoneID *string) ([]*rout
 	return res.ResourceRecordSets, nil
 }
 
-func (a *AWS) getHostedZone(ctx context.Context, hostname string) (*route53.HostedZone, error) {
+func (a *AWS) GetHostedZone(ctx context.Context, hostname string) (*route53.HostedZone, error) {
 	klog.V(4).Infof("Get hosted zone for %s", hostname)
 	input := &route53.ListHostedZonesByNameInput{
 		DNSName:  aws.String(hostname + "."),

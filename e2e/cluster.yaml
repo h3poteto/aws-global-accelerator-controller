@@ -1,0 +1,210 @@
+apiVersion: kops.k8s.io/v1alpha2
+kind: Cluster
+metadata:
+  creationTimestamp: null
+  name: e2e-global-accelerator.k8s.h3poteto.dev
+spec:
+  api:
+    dns: {}
+  authorization:
+    rbac: {}
+  channel: stable
+  cloudProvider: aws
+  configBase: s3://e2e-global-accelerator/e2e-global-accelerator.k8s.h3poteto.dev
+  dnsZone: Z21DTFU4BHSZ51
+  containerRuntime: containerd
+  etcdClusters:
+  - cpuRequest: 200m
+    etcdMembers:
+    - encryptedVolume: true
+      instanceGroup: master-ap-northeast-1a
+      name: a
+    memoryRequest: 100Mi
+    name: main
+  - cpuRequest: 100m
+    etcdMembers:
+    - encryptedVolume: true
+      instanceGroup: master-ap-northeast-1a
+      name: a
+    memoryRequest: 100Mi
+    name: events
+  iam:
+    allowContainerRegistry: true
+    legacy: false
+    serviceAccountExternalPermissions:
+      - name: aws-global-accelerator-controller
+        namespace: default
+        aws:
+          inlinePolicy: |-
+            [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "elasticloadbalancing:DescribeLoadBalancers",
+                  "globalaccelerator:DescribeAccelerator",
+                  "globalaccelerator:ListAccelerators",
+                  "globalaccelerator:ListTagsForResource",
+                  "globalaccelerator:TagResource",
+                  "globalaccelerator:CreateAccelerator",
+                  "globalaccelerator:UpdateAccelerator",
+                  "globalaccelerator:DeleteAccelerator",
+                  "globalaccelerator:ListListeners",
+                  "globalaccelerator:CreateListener",
+                  "globalaccelerator:UpdateListener",
+                  "globalaccelerator:DeleteListener",
+                  "globalaccelerator:ListEndpointGroups",
+                  "globalaccelerator:CreateEndpointGroup",
+                  "globalaccelerator:UpdateEndpointGroup",
+                  "globalaccelerator:DeleteEndpointGroup",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:ListHostedZones",
+                  "route53:ListHostedzonesByName",
+                  "route53:ListResourceRecordSets"
+                ],
+                "Resource": "*"
+              }
+            ]
+
+  kubelet:
+    anonymousAuth: false
+    authenticationTokenWebhook: true
+    authorizationMode: Webhook
+    maxPods: 50
+  kubeAPIServer:
+    defaultNotReadyTolerationSeconds: 600
+    defaultUnreachableTolerationSeconds: 600
+  kubernetesApiAccess:
+  - 0.0.0.0/0
+  kubernetesVersion: 1.23.3
+  masterPublicName: api.e2e-global-accelerator.k8s.h3poteto.dev
+  networkCIDR: 172.20.0.0/16
+  networking:
+    amazonvpc: {}
+  nonMasqueradeCIDR: 100.64.0.0/10
+  serviceAccountIssuerDiscovery:
+    discoveryStore: s3://e2e-aws-global-accelerator-discovery
+    enableAWSOIDCProvider: true
+  awsLoadBalancerController:
+    enabled: true
+  podIdentityWebhook:
+    enabled: true
+  certManager:
+    enabled: true
+    managed: true
+  sshAccess:
+  - 0.0.0.0/0
+  - ::/0
+  subnets:
+  - cidr: 172.20.32.0/19
+    name: ap-northeast-1a
+    type: Public
+    zone: ap-northeast-1a
+  - cidr: 172.20.64.0/19
+    name: ap-northeast-1c
+    type: Public
+    zone: ap-northeast-1c
+  - cidr: 172.20.96.0/19
+    name: ap-northeast-1d
+    type: Public
+    zone: ap-northeast-1d
+  topology:
+    dns:
+      type: Public
+    masters: public
+    nodes: public
+
+---
+
+apiVersion: kops.k8s.io/v1alpha2
+kind: InstanceGroup
+metadata:
+  creationTimestamp: null
+  labels:
+    kops.k8s.io/cluster: e2e-global-accelerator.k8s.h3poteto.dev
+  name: master-ap-northeast-1a
+spec:
+  image: 099720109477/ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20211015
+  instanceMetadata:
+    httpPutResponseHopLimit: 3
+    httpTokens: required
+  machineType: t3.small
+  maxSize: 1
+  minSize: 1
+  maxPrice: "0.208"
+  mixedInstancesPolicy:
+    instances:
+      - t3.small
+      - t2.small
+    onDemandAboveBase: 0
+    onDemandBase: 0
+    spotAllocationStrategy: lowest-price
+    spotInstancePools: 2
+  nodeLabels:
+    kops.k8s.io/instancegroup: master-ap-northeast-1a
+  role: Master
+  subnets:
+  - ap-northeast-1a
+
+---
+
+apiVersion: kops.k8s.io/v1alpha2
+kind: InstanceGroup
+metadata:
+  creationTimestamp: null
+  labels:
+    kops.k8s.io/cluster: e2e-global-accelerator.k8s.h3poteto.dev
+  name: nodes-ap-northeast-1a
+spec:
+  image: 099720109477/ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20211015
+  instanceMetadata:
+    httpPutResponseHopLimit: 3
+    httpTokens: required
+  machineType: t3.small
+  maxSize: 1
+  minSize: 1
+  maxPrice: "0.416"
+  mixedInstancesPolicy:
+    instances:
+      - t3.small
+      - t2.small
+    onDemandAboveBase: 0
+    onDemandBase: 0
+    spotAllocationStrategy: lowest-price
+    spotInstancePools: 2
+  nodeLabels:
+    kops.k8s.io/instancegroup: nodes-ap-northeast-1a
+  role: Node
+  subnets:
+  - ap-northeast-1a
+
+---
+
+apiVersion: kops.k8s.io/v1alpha2
+kind: InstanceGroup
+metadata:
+  creationTimestamp: null
+  labels:
+    kops.k8s.io/cluster: e2e-global-accelerator.k8s.h3poteto.dev
+  name: nodes-ap-northeast-1c
+spec:
+  image: 099720109477/ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20211015
+  instanceMetadata:
+    httpPutResponseHopLimit: 3
+    httpTokens: required
+  machineType: t3.small
+  maxSize: 1
+  minSize: 1
+  maxPrice: "0.416"
+  mixedInstancesPolicy:
+    instances:
+      - t3.small
+      - t2.small
+    onDemandAboveBase: 0
+    onDemandBase: 0
+    spotAllocationStrategy: lowest-price
+    spotInstancePools: 2
+  nodeLabels:
+    kops.k8s.io/instancegroup: nodes-ap-northeast-1c
+  role: Node
+  subnets:
+  - ap-northeast-1c
