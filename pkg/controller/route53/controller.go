@@ -30,9 +30,11 @@ const controllerAgentName = "route53-controller"
 
 type Route53Config struct {
 	Workers int
+	APIHost string
 }
 
 type Route53Controller struct {
+	apiHost       string
 	kubeclint     kubernetes.Interface
 	serviceLister corelisters.ServiceLister
 	serviceSynced cache.InformerSynced
@@ -52,6 +54,7 @@ func NewRoute53Controller(kubeclient kubernetes.Interface, informerFactory infor
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Route53Controller{
+		apiHost:      config.APIHost,
 		kubeclint:    kubeclient,
 		recorder:     recorder,
 		serviceQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),

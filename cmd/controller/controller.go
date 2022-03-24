@@ -56,9 +56,11 @@ func (o *options) run(cmd *cobra.Command, args []string) {
 	config := manager.ControllerConfig{
 		GlobalAccelerator: &globalaccelerator.GlobalAcceleratorConfig{
 			Workers: o.workers,
+			APIHost: cfg.Host,
 		},
 		Route53: &route53.Route53Config{
 			Workers: o.workers,
+			APIHost: cfg.Host,
 		},
 	}
 

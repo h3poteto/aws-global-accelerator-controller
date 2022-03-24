@@ -35,7 +35,7 @@ func (c *GlobalAcceleratorController) processIngressDelete(ctx context.Context, 
 
 	cloud := cloudaws.NewAWS("us-west-2")
 
-	accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, "ingress", ns, name)
+	accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.apiHost, "ingress", ns, name)
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -61,7 +61,7 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 
 	if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
 		cloud := cloudaws.NewAWS("us-west-2")
-		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, "ingress", ingress.Namespace, ingress.Name)
+		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.apiHost, "ingress", ingress.Namespace, ingress.Name)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
@@ -95,7 +95,7 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 				return reconcile.Result{}, err
 			}
 			cloud := cloudaws.NewAWS(region)
-			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, name, region)
+			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, c.apiHost, name, region)
 			if err != nil {
 				return reconcile.Result{}, err
 			}

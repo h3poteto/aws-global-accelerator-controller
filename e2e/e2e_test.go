@@ -118,12 +118,12 @@ var _ = Describe("E2E", func() {
 
 				DeferCleanup(func() error {
 					kubeClient.CoreV1().Services(svc.Namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
-					err = waitUntilCleanup(cloud, hostnames, "service", svc)
+					err = waitUntilCleanup(cloud, hostnames, cfg.Host, "service", svc)
 					return err
 				})
 
 				By("Wait until Global Accelerator is created", func() {
-					err = waitUntilGlobalAccelerator(cloud, lbName, "service", svc)
+					err = waitUntilGlobalAccelerator(cloud, cfg.Host, lbName, "service", svc)
 					Expect(err).ShouldNot(HaveOccurred())
 				})
 
@@ -135,7 +135,7 @@ var _ = Describe("E2E", func() {
 				By("Remove resources", func() {
 					err := kubeClient.CoreV1().Services(svc.Namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
 					Expect(err).ShouldNot(HaveOccurred())
-					err = waitUntilCleanup(cloud, hostnames, "service", svc)
+					err = waitUntilCleanup(cloud, hostnames, cfg.Host, "service", svc)
 					Expect(err).ShouldNot(HaveOccurred())
 				})
 			})
@@ -174,12 +174,12 @@ var _ = Describe("E2E", func() {
 
 				DeferCleanup(func() error {
 					kubeClient.NetworkingV1().Ingresses(ingress.Namespace).Delete(ctx, ingress.Name, metav1.DeleteOptions{})
-					err = waitUntilCleanup(cloud, hostnames, "ingress", ingress)
+					err = waitUntilCleanup(cloud, hostnames, cfg.Host, "ingress", ingress)
 					return err
 				})
 
 				By("Wait until Global Accelerator is created", func() {
-					err = waitUntilGlobalAccelerator(cloud, lbName, "ingress", ingress)
+					err = waitUntilGlobalAccelerator(cloud, lbName, cfg.Host, "ingress", ingress)
 					Expect(err).ShouldNot(HaveOccurred())
 				})
 
@@ -191,7 +191,7 @@ var _ = Describe("E2E", func() {
 				By("Remove resources", func() {
 					err := kubeClient.NetworkingV1().Ingresses(ingress.Namespace).Delete(ctx, ingress.Name, metav1.DeleteOptions{})
 					Expect(err).ShouldNot(HaveOccurred())
-					err = waitUntilCleanup(cloud, hostnames, "ingress", ingress)
+					err = waitUntilCleanup(cloud, hostnames, cfg.Host, "ingress", ingress)
 					Expect(err).ShouldNot(HaveOccurred())
 				})
 			})
@@ -233,7 +233,7 @@ func nodeIsReady(node *corev1.Node) bool {
 	return false
 }
 
-func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, resource string, obj metav1.Object) error {
+func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, apiHost, resource string, obj metav1.Object) error {
 	ctx := context.Background()
 	lb, err := cloud.GetLoadBalancer(ctx, lbName)
 	if err != nil {
@@ -241,7 +241,7 @@ func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, resource string, ob
 	}
 
 	err = wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
-		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, resource, obj.GetNamespace(), obj.GetName())
+		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, apiHost, resource, obj.GetNamespace(), obj.GetName())
 		if err != nil {
 			return false, err
 		}
@@ -316,7 +316,7 @@ func waitUntilRoute53(cloud *cloudaws.AWS, hostnames []string, lbHostname, resou
 	return nil
 }
 
-func waitUntilCleanup(cloud *cloudaws.AWS, hostnames []string, resource string, obj metav1.Object) error {
+func waitUntilCleanup(cloud *cloudaws.AWS, hostnames []string, apiHost, resource string, obj metav1.Object) error {
 	if cloud == nil {
 		return nil
 	}
@@ -347,7 +347,7 @@ func waitUntilCleanup(cloud *cloudaws.AWS, hostnames []string, resource string, 
 	}
 
 	err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, resource, obj.GetNamespace(), obj.GetName())
+		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, apiHost, resource, obj.GetNamespace(), obj.GetName())
 		if err != nil {
 			return false, err
 		}

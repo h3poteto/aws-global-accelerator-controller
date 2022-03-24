@@ -33,7 +33,7 @@ func (c *GlobalAcceleratorController) processServiceDelete(ctx context.Context, 
 	}
 
 	cloud := cloudaws.NewAWS("us-west-2")
-	accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, "service", ns, name)
+	accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.apiHost, "service", ns, name)
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -59,7 +59,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 
 	if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
 		cloud := cloudaws.NewAWS("us-west-2")
-		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, "service", svc.Namespace, svc.Name)
+		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.apiHost, "service", svc.Namespace, svc.Name)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
@@ -91,7 +91,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 				return reconcile.Result{}, err
 			}
 			cloud := cloudaws.NewAWS(region)
-			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &lbIngress, name, region)
+			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &lbIngress, c.apiHost, name, region)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
