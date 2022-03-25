@@ -14,8 +14,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func Route53OwnerValue(resource, ns, name string) string {
-	return "\"heritage=aws-global-accelerator-controller," + resource + "/" + ns + "/" + name + "\""
+func Route53OwnerValue(clusterName, resource, ns, name string) string {
+	return "\"heritage=aws-global-accelerator-controller,cluster=" + clusterName + "," + resource + "/" + ns + "/" + name + "\""
 }
 
 func (a *AWS) EnsureRoute53ForService(
@@ -23,8 +23,9 @@ func (a *AWS) EnsureRoute53ForService(
 	svc *corev1.Service,
 	lbIngress *corev1.LoadBalancerIngress,
 	hostnames []string,
+	clusterName string,
 ) (bool, time.Duration, error) {
-	return a.ensureRoute53(ctx, lbIngress, hostnames, "service", svc.Namespace, svc.Name)
+	return a.ensureRoute53(ctx, lbIngress, hostnames, clusterName, "service", svc.Namespace, svc.Name)
 }
 
 func (a *AWS) EnsureRoute53ForIngress(
@@ -32,15 +33,16 @@ func (a *AWS) EnsureRoute53ForIngress(
 	ingress *networkingv1.Ingress,
 	lbIngress *corev1.LoadBalancerIngress,
 	hostnames []string,
+	clusterName string,
 ) (bool, time.Duration, error) {
-	return a.ensureRoute53(ctx, lbIngress, hostnames, "ingress", ingress.Namespace, ingress.Name)
+	return a.ensureRoute53(ctx, lbIngress, hostnames, clusterName, "ingress", ingress.Namespace, ingress.Name)
 }
 
 func (a *AWS) ensureRoute53(
 	ctx context.Context,
 	lbIngress *corev1.LoadBalancerIngress,
 	hostnames []string,
-	resource, ns, name string,
+	clusterName, resource, ns, name string,
 ) (bool, time.Duration, error) {
 	// Get Global Accelerator
 	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, resource, ns, name)
@@ -71,7 +73,7 @@ HOSTNAMES:
 		klog.Infof("HostedZone is %s", *hostedZone.Id)
 
 		klog.Infof("Finding record sets for HostedZone %s", *hostedZone.Id)
-		records, err := a.FindOwneredARecordSets(ctx, hostedZone, Route53OwnerValue(resource, ns, name))
+		records, err := a.FindOwneredARecordSets(ctx, hostedZone, Route53OwnerValue(clusterName, resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return false, 0, err
@@ -81,7 +83,7 @@ HOSTNAMES:
 		if record == nil {
 			// Create a new record set
 			klog.Infof("Creating record for %s with %s", hostname, *accelerator.AcceleratorArn)
-			err = a.createMetadataRecordSet(ctx, hostedZone, hostname, resource, ns, name)
+			err = a.createMetadataRecordSet(ctx, hostedZone, hostname, clusterName, resource, ns, name)
 			if err != nil {
 				klog.Error(err)
 				return false, 0, err
@@ -109,14 +111,14 @@ HOSTNAMES:
 	return created, 0, nil
 }
 
-func (a *AWS) CleanupRecordSet(ctx context.Context, resource, ns, name string) error {
+func (a *AWS) CleanupRecordSet(ctx context.Context, clusterName, resource, ns, name string) error {
 	zones, err := a.listAllHostedZone(ctx)
 	if err != nil {
 		klog.Error(err)
 		return err
 	}
 	for _, zone := range zones {
-		records, err := a.FindOwneredARecordSets(ctx, zone, Route53OwnerValue(resource, ns, name))
+		records, err := a.FindOwneredARecordSets(ctx, zone, Route53OwnerValue(clusterName, resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
@@ -128,7 +130,7 @@ func (a *AWS) CleanupRecordSet(ctx context.Context, resource, ns, name string) e
 			}
 			klog.Infof("Record set %s: %s is deleted", *record.Name, *record.Type)
 		}
-		records, err = a.findOwneredMetadataRecordSets(ctx, zone, Route53OwnerValue(resource, ns, name))
+		records, err = a.findOwneredMetadataRecordSets(ctx, zone, Route53OwnerValue(clusterName, resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
@@ -235,7 +237,7 @@ func (a *AWS) createRecordSet(ctx context.Context, hostedZone *route53.HostedZon
 	return err
 }
 
-func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53.HostedZone, hostname, resource, ns, name string) error {
+func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53.HostedZone, hostname, clusterName, resource, ns, name string) error {
 	input := &route53.ChangeResourceRecordSetsInput{
 		HostedZoneId: hostedZone.Id,
 		ChangeBatch: &route53.ChangeBatch{
@@ -248,7 +250,7 @@ func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53.H
 						TTL:  aws.Int64(300),
 						ResourceRecords: []*route53.ResourceRecord{
 							&route53.ResourceRecord{
-								Value: aws.String(Route53OwnerValue(resource, ns, name)),
+								Value: aws.String(Route53OwnerValue(clusterName, resource, ns, name)),
 							},
 						},
 					},
