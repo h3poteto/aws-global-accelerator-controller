@@ -1,4 +1,4 @@
-.PHONY: build run clean manifests code-generator controller-gen
+.PHONY: build run clean manifests code-generator controller-gen push
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -47,6 +47,6 @@ else
 CONTROLLER_GEN=$(shell which controller-gen)
 endif
 
-gpush:
+push:
 	docker build -f Dockerfile -t ghcr.io/h3poteto/aws-global-accelerator-controller:$(BRANCH) .
 	docker push ghcr.io/h3poteto/aws-global-accelerator-controller:$(BRANCH)

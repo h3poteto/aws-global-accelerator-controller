@@ -29,12 +29,12 @@ import (
 const controllerAgentName = "global-accelerator-controller"
 
 type GlobalAcceleratorConfig struct {
-	Workers int
-	APIHost string
+	Workers     int
+	ClusterName string
 }
 
 type GlobalAcceleratorController struct {
-	apiHost       string
+	clusterName   string
 	kubeclient    kubernetes.Interface
 	serviceLister corelisters.ServiceLister
 	serviceSynced cache.InformerSynced
@@ -58,7 +58,7 @@ func NewGlobalAcceleratorController(kubeclient kubernetes.Interface, informerFac
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &GlobalAcceleratorController{
-		apiHost:      config.APIHost,
+		clusterName:  config.ClusterName,
 		kubeclient:   kubeclient,
 		recorder:     recorder,
 		serviceQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),

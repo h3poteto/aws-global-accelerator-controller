@@ -13,18 +13,15 @@ const (
 	clusterRoleName = "global-accelerator-manager-role"
 )
 
-func NewManagerManifests(ns, name, image string) (*corev1.ServiceAccount, *rbacv1.ClusterRoleBinding, *appsv1.Deployment) {
-	return serviceAccount(ns, name), clusterRoleBinding(ns, name), deployment(ns, name, image, name)
+func NewManagerManifests(ns, name, image, clusterName string) (*corev1.ServiceAccount, *rbacv1.ClusterRoleBinding, *appsv1.Deployment) {
+	return serviceAccount(ns, name), clusterRoleBinding(ns, name), deployment(ns, name, image, name, clusterName)
 }
 
 func serviceAccount(ns, name string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Namespace:   ns,
-			Annotations: map[string]string{
-				// TODO:
-			},
+			Name:      name,
+			Namespace: ns,
 		},
 	}
 }
@@ -50,7 +47,7 @@ func clusterRoleBinding(ns, serviceAccountName string) *rbacv1.ClusterRoleBindin
 	}
 }
 
-func deployment(ns, name, image, serviceAccountName string) *appsv1.Deployment {
+func deployment(ns, name, image, serviceAccountName, clusterName string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -80,6 +77,7 @@ func deployment(ns, name, image, serviceAccountName string) *appsv1.Deployment {
 							Args: []string{
 								"/aws-global-accelerator-controller",
 								"controller",
+								"--cluster-name=" + clusterName,
 								"--v=4",
 							},
 							Env: []corev1.EnvVar{
