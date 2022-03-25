@@ -128,7 +128,7 @@ var _ = Describe("E2E", func() {
 				})
 
 				By("Wait until Route53 record is created", func() {
-					err = waitUntilRoute53(cloud, hostnames, svc.Status.LoadBalancer.Ingress[0].Hostname, "service", svc)
+					err = waitUntilRoute53(cloud, hostnames, svc.Status.LoadBalancer.Ingress[0].Hostname, cfg.Host, "service", svc)
 					Expect(err).ShouldNot(HaveOccurred())
 				})
 
@@ -184,7 +184,7 @@ var _ = Describe("E2E", func() {
 				})
 
 				By("Wait until Route53 record is created", func() {
-					err = waitUntilRoute53(cloud, hostnames, ingress.Status.LoadBalancer.Ingress[0].Hostname, "ingress", ingress)
+					err = waitUntilRoute53(cloud, hostnames, ingress.Status.LoadBalancer.Ingress[0].Hostname, cfg.Host, "ingress", ingress)
 					Expect(err).ShouldNot(HaveOccurred())
 				})
 
@@ -280,7 +280,7 @@ func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, apiHost, resource s
 	return err
 }
 
-func waitUntilRoute53(cloud *cloudaws.AWS, hostnames []string, lbHostname, resource string, obj metav1.Object) error {
+func waitUntilRoute53(cloud *cloudaws.AWS, hostnames []string, lbHostname, apiHost, resource string, obj metav1.Object) error {
 	ctx := context.Background()
 	accelerators, err := cloud.ListGlobalAcceleratorByHostname(ctx, lbHostname, resource, obj.GetNamespace(), obj.GetName())
 	if err != nil {
@@ -293,7 +293,7 @@ func waitUntilRoute53(cloud *cloudaws.AWS, hostnames []string, lbHostname, resou
 		Expect(err).ShouldNot(HaveOccurred())
 
 		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-			records, err := cloud.FindOwneredARecordSets(ctx, hostedZone, cloudaws.Route53OwnerValue(resource, obj.GetNamespace(), obj.GetName()))
+			records, err := cloud.FindOwneredARecordSets(ctx, hostedZone, cloudaws.Route53OwnerValue(apiHost, resource, obj.GetNamespace(), obj.GetName()))
 			if err != nil {
 				return false, err
 			}
@@ -330,7 +330,7 @@ func waitUntilCleanup(cloud *cloudaws.AWS, hostnames []string, apiHost, resource
 			return err
 		}
 		err = wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-			records, err := cloud.FindOwneredARecordSets(ctx, hostedZone, cloudaws.Route53OwnerValue(resource, obj.GetNamespace(), obj.GetName()))
+			records, err := cloud.FindOwneredARecordSets(ctx, hostedZone, cloudaws.Route53OwnerValue(apiHost, resource, obj.GetNamespace(), obj.GetName()))
 			if err != nil {
 				return false, err
 			}
