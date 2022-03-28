@@ -45,17 +45,18 @@ func (a *AWS) ensureRoute53(
 	clusterName, resource, ns, name string,
 ) (bool, time.Duration, error) {
 	// Get Global Accelerator
-	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, resource, ns, name)
+	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, clusterName)
 	if err != nil {
 		klog.Error(err)
 		return false, 0, err
 	}
 	if len(accelerators) > 1 {
+		klog.V(4).Infof("Found many Global Accelerators: %#v", accelerators)
 		err := fmt.Errorf("Too many Global Accelerators for %s", lbIngress.Hostname)
 		klog.Error(err)
 		return false, 1 * time.Minute, nil
 	} else if len(accelerators) == 0 {
-		err := fmt.Errorf("Could not find Global Accelerato for %s", lbIngress.Hostname)
+		err := fmt.Errorf("Could not find Global Accelerator for %s", lbIngress.Hostname)
 		klog.Error(err)
 		return false, 1 * time.Minute, nil
 	}
@@ -96,6 +97,7 @@ HOSTNAMES:
 			created = true
 		} else {
 			if !needRecordsUpdate(record, accelerator) {
+				klog.Infof("Do not need to update for %s, so skip it", *record.Name)
 				continue HOSTNAMES
 			}
 			err = a.updateRecordSet(ctx, hostedZone, hostname, accelerator)
@@ -103,7 +105,7 @@ HOSTNAMES:
 				klog.Error(err)
 				return false, 0, err
 			}
-			klog.Infof("RecordSet for %s is updated", hostname)
+			klog.Infof("RecordSet %s is updated", *record.Name)
 		}
 	}
 

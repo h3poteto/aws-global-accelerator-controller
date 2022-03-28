@@ -285,7 +285,7 @@ func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, clusterName, resour
 
 func waitUntilRoute53(cloud *cloudaws.AWS, hostnames []string, lbHostname, clusterName, resource string, obj metav1.Object) error {
 	ctx := context.Background()
-	accelerators, err := cloud.ListGlobalAcceleratorByHostname(ctx, lbHostname, resource, obj.GetNamespace(), obj.GetName())
+	accelerators, err := cloud.ListGlobalAcceleratorByHostname(ctx, lbHostname, clusterName)
 	if err != nil {
 		return err
 	}

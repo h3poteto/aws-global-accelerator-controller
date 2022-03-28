@@ -31,7 +31,7 @@ func acceleratorName(resource string, obj metav1.Object) string {
 	return resource + "-" + obj.GetNamespace() + "-" + obj.GetName()
 }
 
-func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, resource, ns, name string) ([]*globalaccelerator.Accelerator, error) {
+func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, clusterName string) ([]*globalaccelerator.Accelerator, error) {
 	accelerators, err := a.listAccelerator(ctx)
 	if err != nil {
 		klog.Error(err)
@@ -45,10 +45,12 @@ func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, res
 		}
 		if tagsContainsAllValues(tags, map[string]string{
 			globalAcceleratorManagedTagKey:     "true",
-			globalAcceleratorOwnerTagKey:       acceleratorOwnerTagValue(resource, ns, name),
 			globalAcceleratorTargetHostnameKey: hostname,
+			globalAcceleratorClusterTagKey:     clusterName,
 		}) {
 			res = append(res, accelerator)
+		} else {
+			klog.V(4).Infof("Global Accelerator %s does not have match tags", *accelerator.AcceleratorArn)
 		}
 	}
 	return res, nil
@@ -72,6 +74,8 @@ func (a *AWS) ListGlobalAcceleratorByResource(ctx context.Context, clusterName, 
 			globalAcceleratorClusterTagKey: clusterName,
 		}) {
 			res = append(res, accelerator)
+		} else {
+			klog.V(4).Infof("Global Accelerator %s does not have match tags", *accelerator.AcceleratorArn)
 		}
 	}
 	return res, nil
