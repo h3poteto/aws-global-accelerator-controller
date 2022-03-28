@@ -45,7 +45,7 @@ func (a *AWS) ensureRoute53(
 	clusterName, resource, ns, name string,
 ) (bool, time.Duration, error) {
 	// Get Global Accelerator
-	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, resource, ns, name)
+	accelerators, err := a.ListGlobalAcceleratorByHostname(ctx, lbIngress.Hostname, clusterName)
 	if err != nil {
 		klog.Error(err)
 		return false, 0, err
@@ -55,7 +55,7 @@ func (a *AWS) ensureRoute53(
 		klog.Error(err)
 		return false, 1 * time.Minute, nil
 	} else if len(accelerators) == 0 {
-		err := fmt.Errorf("Could not find Global Accelerato for %s", lbIngress.Hostname)
+		err := fmt.Errorf("Could not find Global Accelerator for %s", lbIngress.Hostname)
 		klog.Error(err)
 		return false, 1 * time.Minute, nil
 	}
