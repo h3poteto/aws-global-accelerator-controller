@@ -49,6 +49,8 @@ func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, clu
 			globalAcceleratorClusterTagKey:     clusterName,
 		}) {
 			res = append(res, accelerator)
+		} else {
+			klog.V(4).Infof("Global Accelerator %s does not have match tags", *accelerator.AcceleratorArn)
 		}
 	}
 	return res, nil
@@ -72,6 +74,8 @@ func (a *AWS) ListGlobalAcceleratorByResource(ctx context.Context, clusterName, 
 			globalAcceleratorClusterTagKey: clusterName,
 		}) {
 			res = append(res, accelerator)
+		} else {
+			klog.V(4).Infof("Global Accelerator %s does not have match tags", *accelerator.AcceleratorArn)
 		}
 	}
 	return res, nil
