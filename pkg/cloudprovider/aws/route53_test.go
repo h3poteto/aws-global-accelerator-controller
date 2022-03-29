@@ -157,6 +157,21 @@ func TestParentDomain(t *testing.T) {
 			hostname: "h3poteto-test.foo.example.com",
 			expected: "foo.example.com",
 		},
+		{
+			title:    "Hostname is domain",
+			hostname: "example.com",
+			expected: "com",
+		},
+		{
+			title:    "Hostname is top-level domain",
+			hostname: "com",
+			expected: "",
+		},
+		{
+			title:    "Hostname is a dot",
+			hostname: ".",
+			expected: "",
+		},
 	}
 
 	for _, c := range cases {

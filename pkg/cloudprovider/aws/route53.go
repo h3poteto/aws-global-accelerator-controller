@@ -302,37 +302,29 @@ func (a *AWS) listRecordSets(ctx context.Context, hostedZoneID *string) ([]*rout
 	return res.ResourceRecordSets, nil
 }
 
-func (a *AWS) GetHostedZone(ctx context.Context, hostname string) (*route53.HostedZone, error) {
-	klog.V(4).Infof("Get hosted zone for %s", hostname)
-	input := &route53.ListHostedZonesByNameInput{
-		DNSName:  aws.String(hostname + "."),
-		MaxItems: aws.String("1"),
-	}
-	res, err := a.route53.ListHostedZonesByNameWithContext(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	for _, zone := range res.HostedZones {
-		if *zone.Name == hostname+"." {
-			return zone, nil
+func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*route53.HostedZone, error) {
+	targetHostname := originalHostname
+	for {
+		if targetHostname == "" {
+			return nil, fmt.Errorf("Could not find hosted zone for %s", originalHostname)
 		}
-	}
-	parent := parentDomain(hostname)
-	klog.V(4).Infof("Get hosted zone for %s", parent)
-	input = &route53.ListHostedZonesByNameInput{
-		DNSName:  aws.String(parent + "."),
-		MaxItems: aws.String("1"),
-	}
-	res, err = a.route53.ListHostedZonesByNameWithContext(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	for _, zone := range res.HostedZones {
-		if *zone.Name == parent+"." {
-			return zone, nil
+		klog.V(4).Infof("Getting hosted zone for %s", targetHostname)
+		input := &route53.ListHostedZonesByNameInput{
+			DNSName:  aws.String(targetHostname + "."),
+			MaxItems: aws.String("1"),
 		}
+		res, err := a.route53.ListHostedZonesByNameWithContext(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		for _, zone := range res.HostedZones {
+			if *zone.Name == targetHostname+"." {
+				return zone, nil
+			}
+		}
+		parent := parentDomain(targetHostname)
+		targetHostname = parent
 	}
-	return nil, fmt.Errorf("Could not find hosted zone for %s", hostname)
 }
 
 func findARecord(records []*route53.ResourceRecordSet, hostname string) *route53.ResourceRecordSet {
