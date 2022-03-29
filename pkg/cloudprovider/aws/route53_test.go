@@ -64,6 +64,24 @@ func TestFindARecord(t *testing.T) {
 				Type: aws.String(route53.RRTypeA),
 			},
 		},
+		{
+			title: "Contains wildcard record",
+			records: []*route53.ResourceRecordSet{
+				&route53.ResourceRecordSet{
+					Name: aws.String("\\052.example.com."),
+					Type: aws.String(route53.RRTypeA),
+				},
+				&route53.ResourceRecordSet{
+					Name: aws.String("bar.example.com."),
+					Type: aws.String(route53.RRTypeA),
+				},
+			},
+			hostname: "*.example.com",
+			expected: &route53.ResourceRecordSet{
+				Name: aws.String("\\052.example.com."),
+				Type: aws.String(route53.RRTypeA),
+			},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.title, func(tt *testing.T) {
