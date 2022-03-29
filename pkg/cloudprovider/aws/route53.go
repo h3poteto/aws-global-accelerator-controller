@@ -80,6 +80,7 @@ HOSTNAMES:
 			return false, 0, err
 		}
 
+		klog.V(4).Infof("Finding A record %s in %v", hostname, records)
 		record := findARecord(records, hostname)
 		if record == nil {
 			// Create a new record set
@@ -336,11 +337,15 @@ func (a *AWS) GetHostedZone(ctx context.Context, hostname string) (*route53.Host
 
 func findARecord(records []*route53.ResourceRecordSet, hostname string) *route53.ResourceRecordSet {
 	for _, record := range records {
-		if *record.Type == route53.RRTypeA && *record.Name == hostname+"." {
+		if *record.Type == route53.RRTypeA && replaceWildcards(*record.Name) == hostname+"." {
 			return record
 		}
 	}
 	return nil
+}
+
+func replaceWildcards(s string) string {
+	return strings.Replace(s, "\\052", "*", 1)
 }
 
 func needRecordsUpdate(record *route53.ResourceRecordSet, accelerator *globalaccelerator.Accelerator) bool {
