@@ -73,7 +73,7 @@ HOSTNAMES:
 		}
 		klog.Infof("HostedZone is %s", *hostedZone.Id)
 
-		klog.Infof("Finding record sets for HostedZone %s", *hostedZone.Id)
+		klog.Infof("Finding record sets %q for HostedZone %s", Route53OwnerValue(clusterName, resource, ns, name), *hostedZone.Id)
 		records, err := a.FindOwneredARecordSets(ctx, hostedZone, Route53OwnerValue(clusterName, resource, ns, name))
 		if err != nil {
 			klog.Error(err)
@@ -201,10 +201,12 @@ func (a *AWS) FindOwneredARecordSets(ctx context.Context, hostedZone *route53.Ho
 	for _, set := range recordSets {
 		for _, record := range set.ResourceRecords {
 			if *record.Value == ownerValue {
+				klog.V(4).Infof("Find owner txt record: %s", *set.Name)
 				hostnames = append(hostnames, *set.Name)
 			}
 		}
 	}
+	klog.V(4).Infof("Finding A record %v", hostnames)
 	resultSets := []*route53.ResourceRecordSet{}
 	for _, set := range recordSets {
 		if hostnameContains(hostnames, *set.Name) && set.AliasTarget != nil {
@@ -294,6 +296,7 @@ func (a *AWS) updateRecordSet(ctx context.Context, hostedZone *route53.HostedZon
 func (a *AWS) listRecordSets(ctx context.Context, hostedZoneID *string) ([]*route53.ResourceRecordSet, error) {
 	input := &route53.ListResourceRecordSetsInput{
 		HostedZoneId: hostedZoneID,
+		MaxItems:     aws.String("300"),
 	}
 	res, err := a.route53.ListResourceRecordSetsWithContext(ctx, input)
 	if err != nil {
