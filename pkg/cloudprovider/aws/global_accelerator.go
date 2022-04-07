@@ -520,11 +520,15 @@ func (a *AWS) listAccelerator(ctx context.Context) ([]*globalaccelerator.Acceler
 	input := &globalaccelerator.ListAcceleratorsInput{
 		MaxResults: aws.Int64(100),
 	}
-	res, err := a.ga.ListAcceleratorsWithContext(ctx, input)
+	accelerators := []*globalaccelerator.Accelerator{}
+	err := a.ga.ListAcceleratorsPagesWithContext(ctx, input, func(page *globalaccelerator.ListAcceleratorsOutput, lastPage bool) bool {
+		accelerators = append(accelerators, page.Accelerators...)
+		return true
+	})
 	if err != nil {
 		return nil, err
 	}
-	return res.Accelerators, nil
+	return accelerators, nil
 }
 
 func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]*globalaccelerator.Tag, error) {
@@ -660,16 +664,21 @@ func (a *AWS) GetListener(ctx context.Context, acceleratorArn string) (*globalac
 		AcceleratorArn: aws.String(acceleratorArn),
 		MaxResults:     aws.Int64(100),
 	}
-	res, err := a.ga.ListListenersWithContext(ctx, input)
+	listeners := []*globalaccelerator.Listener{}
+	err := a.ga.ListListenersPagesWithContext(ctx, input, func(page *globalaccelerator.ListListenersOutput, lastPage bool) bool {
+		listeners = append(listeners, page.Listeners...)
+		return true
+	})
 	if err != nil {
 		return nil, err
 	}
-	if len(res.Listeners) <= 0 {
+	if len(listeners) <= 0 {
 		return nil, &globalaccelerator.ListenerNotFoundException{}
-	} else if len(res.Listeners) > 1 {
+	} else if len(listeners) > 1 {
+		klog.V(4).Infof("Too many listeners: %+v", listeners)
 		return nil, errors.New("Too many listeners")
 	}
-	return res.Listeners[0], nil
+	return listeners[0], nil
 }
 
 func (a *AWS) createListener(ctx context.Context, accelerator *globalaccelerator.Accelerator, ports []int64, protocol string) (*globalaccelerator.Listener, error) {
@@ -736,16 +745,21 @@ func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*global
 		ListenerArn: aws.String(listenerArn),
 		MaxResults:  aws.Int64(100),
 	}
-	res, err := a.ga.ListEndpointGroupsWithContext(ctx, input)
+	endpointGroups := []*globalaccelerator.EndpointGroup{}
+	err := a.ga.ListEndpointGroupsPagesWithContext(ctx, input, func(page *globalaccelerator.ListEndpointGroupsOutput, lastPage bool) bool {
+		endpointGroups = append(endpointGroups, page.EndpointGroups...)
+		return true
+	})
 	if err != nil {
 		return nil, err
 	}
-	if len(res.EndpointGroups) <= 0 {
+	if len(endpointGroups) <= 0 {
 		return nil, &globalaccelerator.EndpointGroupNotFoundException{}
-	} else if len(res.EndpointGroups) > 1 {
+	} else if len(endpointGroups) > 1 {
+		klog.V(4).Infof("Too many endpoint groups: %+v", endpointGroups)
 		return nil, errors.New("Too many endpoint groups")
 	}
-	return res.EndpointGroups[0], nil
+	return endpointGroups[0], nil
 }
 
 func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerator.Listener, lbArn *string, region string) (*globalaccelerator.EndpointGroup, error) {
