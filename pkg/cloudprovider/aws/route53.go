@@ -185,11 +185,15 @@ func (a *AWS) listAllHostedZone(ctx context.Context) ([]*route53.HostedZone, err
 	input := &route53.ListHostedZonesInput{
 		MaxItems: aws.String("100"),
 	}
-	res, err := a.route53.ListHostedZonesWithContext(ctx, input)
+	hostedZones := []*route53.HostedZone{}
+	err := a.route53.ListHostedZonesPagesWithContext(ctx, input, func(page *route53.ListHostedZonesOutput, lastPage bool) bool {
+		hostedZones = append(hostedZones, page.HostedZones...)
+		return true
+	})
 	if err != nil {
 		return nil, err
 	}
-	return res.HostedZones, nil
+	return hostedZones, nil
 }
 
 func (a *AWS) FindOwneredARecordSets(ctx context.Context, hostedZone *route53.HostedZone, ownerValue string) ([]*route53.ResourceRecordSet, error) {
@@ -298,11 +302,15 @@ func (a *AWS) listRecordSets(ctx context.Context, hostedZoneID *string) ([]*rout
 		HostedZoneId: hostedZoneID,
 		MaxItems:     aws.String("300"),
 	}
-	res, err := a.route53.ListResourceRecordSetsWithContext(ctx, input)
+	recordSets := []*route53.ResourceRecordSet{}
+	err := a.route53.ListResourceRecordSetsPagesWithContext(ctx, input, func(page *route53.ListResourceRecordSetsOutput, lastPage bool) bool {
+		recordSets = append(recordSets, page.ResourceRecordSets...)
+		return true
+	})
 	if err != nil {
 		return nil, err
 	}
-	return res.ResourceRecordSets, nil
+	return recordSets, nil
 }
 
 func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*route53.HostedZone, error) {
