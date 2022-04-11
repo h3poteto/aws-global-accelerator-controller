@@ -1,0 +1,52 @@
+name: E2E
+
+on:
+  push:
+    branches:
+
+env:
+  KOPS_VERSION: 1.23.0
+  KUBECTL_VERSION: 1.23.4
+
+permissions:
+      id-token: write
+      contents: read
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu
+
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.16.0'
+      - uses: actions/checkout@v3
+      - name: Configure AWS credentials from Test account
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::564677439943:role/kops-from-github-role
+          aws-region: ap-northeast-1
+      - name: Install kubectl
+        env:
+          KUBECTL_VERSION: ${{ env.KUBECTL_VERSION }}
+          BIN_DIR: ${{ github.workspace }}/tools/
+        run: |
+          mkdir -p $BIN_DIR
+          curl -sSLo "$BIN_DIR/kubectl" "https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x "$BIN_DIR/kubectl"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+      - name: Install kOps
+        env:
+          KOPS_VERSION: ${{ env.KOPS_VERSION }}
+          BIN_DIR: ${{ github.workspace }}/tools/
+        run: |
+          mkdir -p $BIN_DIR
+          curl -sSLo "$BIN_DIR/kops" "https://github.com/kubernetes/kops/releases/download/v${KOPS_VERSION}/kops-linux-amd64"
+          chmod +x "$BIN_DIR/Kops"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+      - name: Check commit message
+        if: contains(join(github.event.head_commit.message, ';'), '[e2e]') == true
+        run: |
+          exit 0
+
+
