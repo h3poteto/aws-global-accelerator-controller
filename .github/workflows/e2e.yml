@@ -3,14 +3,18 @@ name: E2E
 on:
   push:
     branches:
+      - master
+  pull_request:
 
 env:
   KOPS_VERSION: 1.23.0
   KUBECTL_VERSION: 1.23.4
+  KOPS_STATE_STORE: s3://e2e-global-accelerator
+  KOPS_CLUSTER_NAME: e2e-global-accelerator.k8s.h3poteto.dev
 
 permissions:
-      id-token: write
-      contents: read
+  id-token: write
+  contents: read
 
 jobs:
   e2e-test:
@@ -26,6 +30,8 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::564677439943:role/kops-from-github-role
           aws-region: ap-northeast-1
+      - run: |
+          aws ec2 describe-instances
       - name: Install kubectl
         env:
           KUBECTL_VERSION: ${{ env.KUBECTL_VERSION }}
