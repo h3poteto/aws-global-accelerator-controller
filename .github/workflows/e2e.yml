@@ -51,8 +51,18 @@ jobs:
           chmod +x "$BIN_DIR/kops"
           echo "$BIN_DIR" >> "$GITHUB_PATH"
       - name: Check commit message
-        if: contains(join(github.event.head_commit.message, ';'), '[e2e]') == true
+        if: contains(join(github.event.head_commit.message, ';'), '[e2e]') != true
         run: |
           exit 0
+      - name: Create cluster
+        run: |
+          kops create cluster -f e2e/cluster.yaml
+          kops create secret --name e2e-global-accelerator.k8s.h3poteto.dev sshpublickey admin -i ~/.ssh/id_rsa.pub
+          kops update cluster e2e-global-accelerator.k8s.h3poteto.dev --yes --admin
+          kops validate cluster --wait 15m
+      - name: Cleanup cluster
+        if: always()
+        run: |
+          kops delete cluster
 
 
