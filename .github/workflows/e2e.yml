@@ -64,6 +64,6 @@ jobs:
       - name: Cleanup cluster
         if: always()
         run: |
-          kops delete cluster
+          kops delete cluster --yes
 
 
