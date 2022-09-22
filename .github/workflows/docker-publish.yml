@@ -32,7 +32,7 @@ jobs:
 
       # Workaround: https://github.com/docker/build-push-action/issues/461
       - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@2a6fbda6d8bd6fe40f8b36c71fca20ffc286129e
+        uses: docker/setup-buildx-action@d5234d6605774d496731c394511848830d37a200
 
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
