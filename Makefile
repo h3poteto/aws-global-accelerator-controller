@@ -14,7 +14,13 @@ CONTROLLER_TOOLS_TAG=v0.8.0
 BRANCH := $(shell git branch --show-current)
 
 build: manifests
-	go build -a -tags netgo -installsuffix netgo --ldflags '-extldflags "-static"'
+	go build -a -tags netgo -installsuffix netgo -ldflags \
+" \
+  -extldflags '-static' \
+  -X github.com/h3poteto/aws-global-accelerator-controller/cmd.version=$(shell git describe --tag --abbrev=0) \
+  -X github.com/h3poteto/aws-global-accelerator-controller/cmd.revision=$(shell git rev-list -1 HEAD) \
+  -X github.com/h3poteto/aws-global-accelerator-controller/cmd.build=$(shell git describe --tags) \
+"
 
 run: manifests
 	go run ./main.go controller --kubeconfig=${KUBECONFIG}
