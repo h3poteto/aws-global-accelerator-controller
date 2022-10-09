@@ -1,4 +1,4 @@
-.PHONY: build run clean manifests code-generator controller-gen push
+.PHONY: build run clean manifests controller-gen push
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -8,8 +8,6 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 CRD_OPTIONS ?= "crd"
-CODE_GENERATOR=${GOPATH}/src/k8s.io/code-generator
-CODE_GENERATOR_TAG=v0.23.4
 CONTROLLER_TOOLS_TAG=v0.8.0
 BRANCH := $(shell git branch --show-current)
 
@@ -28,15 +26,10 @@ run: manifests
 
 clean:
 	rm -f $(GOBIN)/controller-gen
-	rm -rf $(CODE_GENERATOR)
 
 manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role paths=./...
 
-code-generator:
-ifeq (, $(wildcard ${CODE_GENERATOR}))
-	git clone https://github.com/kubernetes/code-generator.git ${CODE_GENERATOR} -b ${CODE_GENERATOR_TAG} --depth 1
-endif
 
 controller-gen:
 ifeq (, $(shell which controller-gen))
