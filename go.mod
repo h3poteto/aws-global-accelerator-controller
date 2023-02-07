@@ -3,7 +3,7 @@ module github.com/h3poteto/aws-global-accelerator-controller
 go 1.19
 
 require (
-	github.com/aws/aws-sdk-go v1.44.114
+	github.com/aws/aws-sdk-go v1.44.195
 	github.com/onsi/ginkgo/v2 v2.2.0
 	github.com/onsi/gomega v1.21.1
 	github.com/spf13/cobra v1.5.0
