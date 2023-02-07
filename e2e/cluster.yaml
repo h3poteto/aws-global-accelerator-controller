@@ -75,7 +75,7 @@ spec:
     defaultUnreachableTolerationSeconds: 600
   kubernetesApiAccess:
   - 0.0.0.0/0
-  kubernetesVersion: 1.23.3
+  kubernetesVersion: 1.25.6
   masterPublicName: api.e2e-global-accelerator.k8s.h3poteto.dev
   networkCIDR: 172.20.0.0/16
   networking:
