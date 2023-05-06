@@ -146,7 +146,7 @@ var _ = Describe("E2E", func() {
 		Context("Ingress Load Balancer", func() {
 			It("Resources should be created", func() {
 				ctx := context.Background()
-				ingress := fixtures.NewALBIngress(namespace, "e2e-test", hostname)
+				ingress := fixtures.NewALBIngress(namespace, "e2e-test", hostname, 443)
 				ingress, err := kubeClient.NetworkingV1().Ingresses(namespace).Create(ctx, ingress, metav1.CreateOptions{})
 				Expect(err).ShouldNot(HaveOccurred())
 
@@ -183,6 +183,21 @@ var _ = Describe("E2E", func() {
 				By("Wait until Global Accelerator is created", func() {
 					err = waitUntilGlobalAccelerator(cloud, lbName, clusterName, "ingress", ingress)
 					Expect(err).ShouldNot(HaveOccurred())
+				})
+
+				By("Check Listener ports", func() {
+					ctx := context.Background()
+					accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, clusterName, "ingress", ingress.GetNamespace(), ingress.GetName())
+					Expect(err).ShouldNot(HaveOccurred())
+					Expect(len(accelerators)).To(Equal(1))
+					for _, accelerator := range accelerators {
+						listener, err := cloud.GetListener(ctx, *accelerator.AcceleratorArn)
+						Expect(err).ShouldNot(HaveOccurred())
+						Expect(len(listener.PortRanges)).To(Equal(1))
+						portRange := listener.PortRanges[0]
+						Expect(*portRange.FromPort).To(Equal(443))
+						Expect(*portRange.ToPort).To(Equal(443))
+					}
 				})
 
 				By("Wait until Route53 record is created", func() {

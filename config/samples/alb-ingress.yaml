@@ -7,6 +7,7 @@ metadata:
     aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
     aws-global-accelerator-controller.h3poteto.dev/route53-hostname: "foo.h3poteto-test.dev,bar.h3poteto-test.dev"
     alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
 spec:
   ingressClassName: alb
   rules:
