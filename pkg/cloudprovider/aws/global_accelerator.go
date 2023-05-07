@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -471,9 +472,33 @@ func listenerForService(svc *corev1.Service) ([]int64, string) {
 	return ports, protocol
 }
 
+type IngressPort struct {
+	HTTP  int64 `json:"HTTP,omitempty"`
+	HTTPS int64 `json:"HTTPS,omitempty"`
+}
+
 func listenerForIngress(ingress *networkingv1.Ingress) ([]int64, string) {
 	ports := []int64{}
 	protocol := "TCP"
+	// If this annotation is specified, ALB listen these ports, we can ignore ports in rules.
+	if val, ok := ingress.Annotations["alb.ingress.kubernetes.io/listen-ports"]; ok {
+		ingressPorts := []IngressPort{}
+		err := json.Unmarshal([]byte(val), &ingressPorts)
+		if err != nil {
+			klog.Error(err)
+			return ports, protocol
+		}
+		for _, i := range ingressPorts {
+			if i.HTTP != 0 {
+				ports = append(ports, i.HTTP)
+			}
+			if i.HTTPS != 0 {
+				ports = append(ports, i.HTTPS)
+			}
+		}
+		return ports, protocol
+	}
+
 	if ingress.Spec.DefaultBackend != nil && ingress.Spec.DefaultBackend.Service != nil {
 		ports = append(ports, int64(ingress.Spec.DefaultBackend.Service.Port.Number))
 	}
@@ -502,9 +527,9 @@ func tagsContainsAllValues(tags []*globalaccelerator.Tag, targetTags map[string]
 	return true
 }
 
-//---------------------------------
+// ---------------------------------
 // Accelerator methods
-//---------------------------------
+// ---------------------------------
 func (a *AWS) getAccelerator(ctx context.Context, arn string) (*globalaccelerator.Accelerator, error) {
 	input := &globalaccelerator.DescribeAcceleratorInput{
 		AcceleratorArn: aws.String(arn),
@@ -656,9 +681,9 @@ func (a *AWS) deleteAccelerator(ctx context.Context, arn string) error {
 	return nil
 }
 
-//---------------------------------
+// ---------------------------------
 // Lstener methods
-//---------------------------------
+// ---------------------------------
 func (a *AWS) GetListener(ctx context.Context, acceleratorArn string) (*globalaccelerator.Listener, error) {
 	input := &globalaccelerator.ListListenersInput{
 		AcceleratorArn: aws.String(acceleratorArn),
@@ -737,9 +762,9 @@ func (a *AWS) deleteListener(ctx context.Context, arn string) error {
 	return nil
 }
 
-//---------------------------------
+// ---------------------------------
 // EndpointGroup methods
-//---------------------------------
+// ---------------------------------
 func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*globalaccelerator.EndpointGroup, error) {
 	input := &globalaccelerator.ListEndpointGroupsInput{
 		ListenerArn: aws.String(listenerArn),

@@ -45,6 +45,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).ShouldNot(HaveOccurred())
 	hostname = os.Getenv("E2E_HOSTNAME")
 	Expect(hostname).ShouldNot(BeEmpty(), "Env var E2E_HOSTNAME is required")
+	acmArn := os.Getenv("E2E_ACM_ARN")
+	Expect(acmArn).ShouldNot(BeEmpty(), "Env var E2E_ACM_ARN is required")
 	namespace = os.Getenv("E2E_NAMESPACE")
 	if namespace == "" {
 		namespace = "default"
@@ -195,8 +197,8 @@ var _ = Describe("E2E", func() {
 						Expect(err).ShouldNot(HaveOccurred())
 						Expect(len(listener.PortRanges)).To(Equal(1))
 						portRange := listener.PortRanges[0]
-						Expect(*portRange.FromPort).To(Equal(443))
-						Expect(*portRange.ToPort).To(Equal(443))
+						Expect(*portRange.FromPort).To(Equal(int64(443)))
+						Expect(*portRange.ToPort).To(Equal(int64(443)))
 					}
 				})
 

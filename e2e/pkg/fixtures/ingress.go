@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"os"
 	"strconv"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
@@ -21,10 +22,11 @@ func NewALBIngress(ns, name, hostname string, port int) *networkingv1.Ingress {
 			Name:      name,
 			Namespace: ns,
 			Annotations: map[string]string{
-				apis.AWSGlobalAcceleratorManagedAnnotation: "yes",
-				apis.Route53HostnameAnnotation:             hostname,
-				"alb.ingress.kubernetes.io/scheme":         "internet-facing",
-				"alb.ingress.kubernetes.io/listen-ports":   listenPorts,
+				apis.AWSGlobalAcceleratorManagedAnnotation:  "yes",
+				apis.Route53HostnameAnnotation:              hostname,
+				"alb.ingress.kubernetes.io/scheme":          "internet-facing",
+				"alb.ingress.kubernetes.io/certificate-arn": os.Getenv("E2E_ACM_ARN"),
+				"alb.ingress.kubernetes.io/listen-ports":    listenPorts,
 			},
 		},
 		Spec: networkingv1.IngressSpec{
