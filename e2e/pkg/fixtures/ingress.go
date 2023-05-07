@@ -1,6 +1,9 @@
 package fixtures
 
 import (
+	"os"
+	"strconv"
+
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -9,18 +12,21 @@ import (
 	utilpointer "k8s.io/utils/pointer"
 )
 
-func NewALBIngress(ns, name, hostname string) *networkingv1.Ingress {
+func NewALBIngress(ns, name, hostname string, port int) *networkingv1.Ingress {
 	svc := newBackendService(ns, name)
 	pt := networkingv1.PathTypePrefix
+	listenPorts := "[{\"HTTPS\":" + strconv.Itoa(port) + "}]"
 
 	return &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ns,
 			Annotations: map[string]string{
-				apis.AWSGlobalAcceleratorManagedAnnotation: "yes",
-				apis.Route53HostnameAnnotation:             hostname,
-				"alb.ingress.kubernetes.io/scheme":         "internet-facing",
+				apis.AWSGlobalAcceleratorManagedAnnotation:  "yes",
+				apis.Route53HostnameAnnotation:              hostname,
+				"alb.ingress.kubernetes.io/scheme":          "internet-facing",
+				"alb.ingress.kubernetes.io/certificate-arn": os.Getenv("E2E_ACM_ARN"),
+				"alb.ingress.kubernetes.io/listen-ports":    listenPorts,
 			},
 		},
 		Spec: networkingv1.IngressSpec{
