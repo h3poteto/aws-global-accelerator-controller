@@ -12,10 +12,9 @@
         "k8s.io/api",
         "k8s.io/apimachinery",
         "k8s.io/client-go",
-        "k8s.io/kubectl",
-        "k8s.io/utils"
+        "k8s.io/kubectl"
       ],
-      "matchUpdateTypes": ["major", "minor"],
+      "matchUpdateTypes": ["patch"],
       "enabled": false
     }
   ]
