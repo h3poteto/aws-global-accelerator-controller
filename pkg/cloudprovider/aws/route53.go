@@ -31,10 +31,24 @@ func (a *AWS) EnsureRoute53ForService(
 func (a *AWS) EnsureRoute53ForIngress(
 	ctx context.Context,
 	ingress *networkingv1.Ingress,
-	lbIngress *corev1.LoadBalancerIngress,
+	ingressLBIngress *networkingv1.IngressLoadBalancerIngress,
 	hostnames []string,
 	clusterName string,
 ) (bool, time.Duration, error) {
+	ports := []corev1.PortStatus{}
+	for _, v := range ingressLBIngress.Ports {
+		ports = append(ports, corev1.PortStatus{
+			Port:     v.Port,
+			Protocol: v.Protocol,
+			Error:    v.Error,
+		})
+	}
+	lbIngress := &corev1.LoadBalancerIngress{
+		IP:       ingressLBIngress.IP,
+		Hostname: ingressLBIngress.Hostname,
+		Ports:    ports,
+	}
+
 	return a.ensureRoute53(ctx, lbIngress, hostnames, clusterName, "ingress", ingress.Namespace, ingress.Name)
 }
 

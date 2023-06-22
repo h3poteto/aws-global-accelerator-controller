@@ -133,7 +133,7 @@ func (a *AWS) EnsureGlobalAcceleratorForService(
 func (a *AWS) EnsureGlobalAcceleratorForIngress(
 	ctx context.Context,
 	ingress *networkingv1.Ingress,
-	lbIngress *corev1.LoadBalancerIngress,
+	lbIngress *networkingv1.IngressLoadBalancerIngress,
 	clusterName, lbName, region string,
 ) (*string, bool, time.Duration, error) {
 	lb, err := a.GetLoadBalancer(ctx, lbName)
