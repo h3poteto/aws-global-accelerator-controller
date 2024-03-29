@@ -8,7 +8,7 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 CRD_OPTIONS ?= "crd"
-CONTROLLER_TOOLS_TAG=v0.10.0
+CONTROLLER_TOOLS_TAG=v0.13.0
 BRANCH := $(shell git branch --show-current)
 
 build: manifests
