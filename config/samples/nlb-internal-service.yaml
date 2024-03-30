@@ -4,10 +4,13 @@ metadata:
   annotations:
     aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
     aws-global-accelerator-controller.h3poteto.dev/route53-hostname: "*.hoge.h3poteto-test.dev"
+    aws-global-accelerator-controller.h3poteto.dev/client-ip-preservation: "true"
     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-type: external
     service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: instance
+    service.beta.kubernetes.io/aws-load-balancer-security-groups: sg-0926c97fdfc296a72
   name: h3poteto-test
   namespace: default
 spec:
@@ -16,11 +19,11 @@ spec:
   - name: http
     port: 80
     protocol: TCP
-    targetPort: 8080
+    targetPort: 80
   - name: https
     port: 443
     protocol: TCP
-    targetPort: 6443
+    targetPort: 443
   selector:
     app: h3poteto
   sessionAffinity: None

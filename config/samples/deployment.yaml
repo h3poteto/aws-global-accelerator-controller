@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: h3poteto
+  labels:
+    app: h3poteto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: h3poteto
+  template:
+    metadata:
+      labels:
+        app: h3poteto
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http-port
+              containerPort: 80
+              protocol: TCP
+            - name: https-port
+              containerPort: 443
+              protocol: TCP

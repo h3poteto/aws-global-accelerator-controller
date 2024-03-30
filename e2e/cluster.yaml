@@ -17,15 +17,19 @@ spec:
   - cpuRequest: 200m
     etcdMembers:
     - encryptedVolume: true
-      instanceGroup: master-ap-northeast-1a
+      instanceGroup: control-plane-ap-northeast-1a
       name: a
+    manager:
+      backupRetentionDays: 90
     memoryRequest: 100Mi
     name: main
   - cpuRequest: 100m
     etcdMembers:
     - encryptedVolume: true
-      instanceGroup: master-ap-northeast-1a
+      instanceGroup: control-plane-ap-northeast-1a
       name: a
+    manager:
+      backupRetentionDays: 90
     memoryRequest: 100Mi
     name: events
   iam:
@@ -76,7 +80,7 @@ spec:
   kubernetesApiAccess:
   - 0.0.0.0/0
   - ::/0
-  kubernetesVersion: 1.25.6
+  kubernetesVersion: 1.28.8
   masterPublicName: api.e2e-global-accelerator.k8s.h3poteto.dev
   networkCIDR: 172.20.0.0/16
   networking:
@@ -122,7 +126,7 @@ metadata:
   creationTimestamp: null
   labels:
     kops.k8s.io/cluster: e2e-global-accelerator.k8s.h3poteto.dev
-  name: master-ap-northeast-1a
+  name: control-plane-ap-northeast-1a
 spec:
   image: 099720109477/ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20230112
   instanceMetadata:
@@ -141,7 +145,7 @@ spec:
     spotAllocationStrategy: lowest-price
     spotInstancePools: 2
   nodeLabels:
-    kops.k8s.io/instancegroup: master-ap-northeast-1a
+    kops.k8s.io/instancegroup: control-plane-ap-northeast-1a
   role: Master
   subnets:
   - ap-northeast-1a
