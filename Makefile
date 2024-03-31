@@ -43,7 +43,7 @@ endif
 
 
 manifests: controller-gen
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role paths=./...
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role paths=./... output:crd:artifacts:config=./config/crd/
 
 
 controller-gen:
