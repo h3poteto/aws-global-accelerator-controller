@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/globalaccelerator"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -194,7 +195,8 @@ func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2.L
 	if err != nil {
 		return accelerator.AcceleratorArn, err
 	}
-	_, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region)
+	ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
+	_, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve)
 	if err != nil {
 		return accelerator.AcceleratorArn, err
 	}
@@ -212,7 +214,8 @@ func (a *AWS) createGlobalAcceleratorForIngress(ctx context.Context, lb *elbv2.L
 	if err != nil {
 		return accelerator.AcceleratorArn, nil
 	}
-	_, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region)
+	ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
+	_, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve)
 	if err != nil {
 		return accelerator.AcceleratorArn, err
 	}
@@ -292,7 +295,8 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 	if err != nil {
 		var notFoundErr *globalaccelerator.EndpointGroupNotFoundException
 		if errors.As(err, &notFoundErr) {
-			endpoint, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region)
+			ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
+			endpoint, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve)
 			if err != nil {
 				klog.Error(err)
 				return err
@@ -304,7 +308,8 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 	}
 	if !endpointContainsLB(endpoint, lb) {
 		klog.Infof("Endpoint Group is changed, so updating: %s", *endpoint.EndpointGroupArn)
-		endpoint, err = a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn)
+		ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
+		endpoint, err = a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn, ipPreserve)
 		if err != nil {
 			klog.Error(err)
 			return err
@@ -351,7 +356,8 @@ func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator
 	if err != nil {
 		var notFoundErr *globalaccelerator.EndpointGroupNotFoundException
 		if errors.As(err, &notFoundErr) {
-			endpoint, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region)
+			ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
+			endpoint, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve)
 			if err != nil {
 				klog.Error(err)
 				return err
@@ -363,7 +369,8 @@ func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator
 	}
 	if !endpointContainsLB(endpoint, lb) {
 		klog.Infof("Endpoint Group is changed, so updating: %s", *endpoint.EndpointGroupArn)
-		endpoint, err = a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn)
+		ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
+		endpoint, err = a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn, ipPreserve)
 		if err != nil {
 			klog.Error(err)
 			return err
@@ -787,11 +794,12 @@ func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*global
 	return endpointGroups[0], nil
 }
 
-func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerator.Listener, lbArn *string, region string) (*globalaccelerator.EndpointGroup, error) {
+func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerator.Listener, lbArn *string, region string, ipPreserve bool) (*globalaccelerator.EndpointGroup, error) {
 	endpointInput := &globalaccelerator.CreateEndpointGroupInput{
 		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{
 			&globalaccelerator.EndpointConfiguration{
-				EndpointId: lbArn,
+				EndpointId:                  lbArn,
+				ClientIPPreservationEnabled: &ipPreserve,
 			},
 		},
 		EndpointGroupRegion: aws.String(region),
@@ -805,11 +813,12 @@ func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerat
 	return endpointRes.EndpointGroup, nil
 }
 
-func (a *AWS) updateEndpointGroup(ctx context.Context, endpoint *globalaccelerator.EndpointGroup, lbArn *string) (*globalaccelerator.EndpointGroup, error) {
+func (a *AWS) updateEndpointGroup(ctx context.Context, endpoint *globalaccelerator.EndpointGroup, lbArn *string, ipPreserve bool) (*globalaccelerator.EndpointGroup, error) {
 	input := &globalaccelerator.UpdateEndpointGroupInput{
 		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{
 			&globalaccelerator.EndpointConfiguration{
-				EndpointId: lbArn,
+				EndpointId:                  lbArn,
+				ClientIPPreservationEnabled: &ipPreserve,
 			},
 		},
 		EndpointGroupArn: endpoint.EndpointGroupArn,

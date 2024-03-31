@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: h3poteto-test
+  namespace: default
+  annotations:
+    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
+    aws-global-accelerator-controller.h3poteto.dev/route53-hostname: "foo.h3poteto-test.dev,bar.h3poteto-test.dev"
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+spec:
+  ingressClassName: alb
+  rules:
+  -  http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: h3poteto-test
+            port:
+              number: 80
+
