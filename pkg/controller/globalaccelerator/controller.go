@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	apisv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
@@ -248,12 +248,12 @@ func (c *GlobalAcceleratorController) keyToIngress(key string) (runtime.Object, 
 }
 
 func hasManagedAnnotation(obj metav1.Object) bool {
-	_, ok := obj.GetAnnotations()[apis.AWSGlobalAcceleratorManagedAnnotation]
+	_, ok := obj.GetAnnotations()[apisv1alpha1.AWSGlobalAcceleratorManagedAnnotation]
 	return ok
 }
 
 func managedAnnotationChanged(old, new metav1.Object) bool {
-	_, oldHas := old.GetAnnotations()[apis.AWSGlobalAcceleratorManagedAnnotation]
-	_, newHas := new.GetAnnotations()[apis.AWSGlobalAcceleratorManagedAnnotation]
+	_, oldHas := old.GetAnnotations()[apisv1alpha1.AWSGlobalAcceleratorManagedAnnotation]
+	_, newHas := new.GetAnnotations()[apisv1alpha1.AWSGlobalAcceleratorManagedAnnotation]
 	return oldHas != newHas
 }

@@ -3,7 +3,8 @@ package globalaccelerator
 import (
 	"context"
 
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	apis "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
+	apisv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
@@ -57,7 +58,7 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 		return reconcile.Result{}, nil
 	}
 
-	if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
+	if _, ok := svc.Annotations[apisv1alpha1.AWSGlobalAcceleratorManagedAnnotation]; !ok {
 		cloud := cloudaws.NewAWS("us-west-2")
 		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.clusterName, "service", svc.Namespace, svc.Name)
 		if err != nil {

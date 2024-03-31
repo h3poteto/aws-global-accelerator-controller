@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	apisv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
@@ -241,12 +241,12 @@ func (c *Route53Controller) keyToIngress(key string) (runtime.Object, error) {
 }
 
 func hasHostnameAnnotation(obj metav1.Object) bool {
-	_, ok := obj.GetAnnotations()[apis.Route53HostnameAnnotation]
+	_, ok := obj.GetAnnotations()[apisv1alpha1.Route53HostnameAnnotation]
 	return ok
 }
 
 func hostnameAnnotationChanged(old, new metav1.Object) bool {
-	_, oldHas := old.GetAnnotations()[apis.Route53HostnameAnnotation]
-	_, newHas := new.GetAnnotations()[apis.Route53HostnameAnnotation]
+	_, oldHas := old.GetAnnotations()[apisv1alpha1.Route53HostnameAnnotation]
+	_, newHas := new.GetAnnotations()[apisv1alpha1.Route53HostnameAnnotation]
 	return oldHas != newHas
 }

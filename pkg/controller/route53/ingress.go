@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	apisv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
@@ -39,7 +39,7 @@ func (c *Route53Controller) processIngressCreateOrUpdate(ctx context.Context, ob
 		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("object is not Ingress, it is %T", obj)
 	}
 
-	hostname, ok := ingress.Annotations[apis.Route53HostnameAnnotation]
+	hostname, ok := ingress.Annotations[apisv1alpha1.Route53HostnameAnnotation]
 	if !ok {
 		cloud := cloudaws.NewAWS("us-west-2")
 		err := cloud.CleanupRecordSet(ctx, c.clusterName, "ingress", ingress.Namespace, ingress.Name)

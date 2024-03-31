@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	apisv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
@@ -18,7 +18,7 @@ import (
 
 func wasLoadBalancerService(svc *corev1.Service) bool {
 	if svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
-		if _, ok := svc.Annotations[apis.AWSLoadBalancerTypeAnnotation]; ok || svc.Spec.LoadBalancerClass != nil {
+		if _, ok := svc.Annotations[apisv1alpha1.AWSLoadBalancerTypeAnnotation]; ok || svc.Spec.LoadBalancerClass != nil {
 			return true
 		}
 	}
@@ -47,7 +47,7 @@ func (c *Route53Controller) processServiceCreateOrUpdate(ctx context.Context, ob
 		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("object is not Service, it is %T", obj)
 	}
 
-	hostname, ok := svc.Annotations[apis.Route53HostnameAnnotation]
+	hostname, ok := svc.Annotations[apisv1alpha1.Route53HostnameAnnotation]
 	if !ok {
 		cloud := cloudaws.NewAWS("us-west-2")
 		err := cloud.CleanupRecordSet(ctx, c.clusterName, "service", svc.Namespace, svc.Name)

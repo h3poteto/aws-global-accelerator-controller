@@ -3,7 +3,8 @@ package globalaccelerator
 import (
 	"context"
 
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
+	apis "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
+	apisv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/v1alpha1"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	pkgerrors "github.com/h3poteto/aws-global-accelerator-controller/pkg/errors"
@@ -59,7 +60,7 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 		return reconcile.Result{}, nil
 	}
 
-	if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
+	if _, ok := ingress.Annotations[apisv1alpha1.AWSGlobalAcceleratorManagedAnnotation]; !ok {
 		cloud := cloudaws.NewAWS("us-west-2")
 		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.clusterName, "ingress", ingress.Namespace, ingress.Name)
 		if err != nil {
