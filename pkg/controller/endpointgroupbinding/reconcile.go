@@ -2,17 +2,18 @@ package endpointgroupbinding
 
 import (
 	"context"
+	"slices"
 
-	endpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/endpointgroupbinding/v1alpha1"
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider"
-	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
-	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
-
+	"golang.org/x/exp/maps"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+
+	endpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/endpointgroupbinding/v1alpha1"
+	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
 )
 
-const finalizer = "endpointgroupbindings.operator.h3poteto.dev"
+const finalizer = "operator.h3poteto.dev/endpointgroupbindings"
 
 func (c *EndpointGroupBindingController) reconcile(ctx context.Context, obj *endpointgroupbindingv1alpha1.EndpointGroupBinding) (reconcile.Result, error) {
 	cloud := cloudaws.NewAWS("us-west-2")
@@ -64,72 +65,35 @@ func (c *EndpointGroupBindingController) reconcileCreate(ctx context.Context, ob
 		return reconcile.Result{}, err
 	}
 
-	hostnames := []string{}
-	if obj.Spec.ServiceRef != nil {
-		service, err := c.serviceLister.Services(obj.Namespace).Get(obj.Spec.ServiceRef.Name)
-		if err != nil {
-			klog.Error(err)
-			return reconcile.Result{}, err
-		}
-		if len(service.Status.LoadBalancer.Ingress) < 1 {
-			klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", service.Namespace, service.Name)
-			return reconcile.Result{}, nil
-		}
-		for i := range service.Status.LoadBalancer.Ingress {
-			hostnames = append(hostnames, service.Status.LoadBalancer.Ingress[i].Hostname)
-		}
-	} else if obj.Spec.IngressRef != nil {
-		ingress, err := c.ingressLister.Ingresses(obj.Namespace).Get(obj.Spec.IngressRef.Name)
-		if err != nil {
-			klog.Error(err)
-			return reconcile.Result{}, err
-		}
-		if len(ingress.Status.LoadBalancer.Ingress) < 1 {
-			klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", ingress.Namespace, ingress.Name)
-			return reconcile.Result{}, nil
-		}
-		for i := range ingress.Status.LoadBalancer.Ingress {
-			hostnames = append(hostnames, ingress.Status.LoadBalancer.Ingress[i].Hostname)
-		}
-	} else {
-		klog.Errorf("EndpointGroupBinding %s does not have serviceRef or ingressRef", obj.Name)
-		return reconcile.Result{}, nil
+	hostnames, err := c.getLoadBalancerHostName(obj)
+	if err != nil {
+		return reconcile.Result{}, err
 	}
 
 	endpointIds := []string{}
 	for _, hostname := range hostnames {
-		provider, err := cloudprovider.DetectCloudProvider(hostname)
+
+		// Get load balancer name and region from the hostname
+		name, region, err := cloudaws.GetLBNameFromHostname(hostname)
 		if err != nil {
 			klog.Error(err)
-			continue
+			return reconcile.Result{}, err
 		}
-		switch provider {
-		case "aws":
-			// Get load balancer name and region from the hostname
-			name, region, err := cloudaws.GetLBNameFromHostname(hostname)
-			if err != nil {
-				klog.Error(err)
-				return reconcile.Result{}, err
-			}
-			cloud := cloudaws.NewAWS(region)
-			endpointId, retry, err := cloud.AddLBToEndpointGroup(ctx, endpoint, name, obj.Spec.ClientIPPreservation)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			if retry > 0 {
-				return reconcile.Result{
-					Requeue:      true,
-					RequeueAfter: retry,
-				}, nil
-			}
-			if endpointId != nil {
-				endpointIds = append(endpointIds, *endpointId)
-			}
+		cloud := cloudaws.NewAWS(region)
+		endpointId, retry, err := cloud.AddLBToEndpointGroup(ctx, endpoint, name, obj.Spec.ClientIPPreservation)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		if retry > 0 {
+			return reconcile.Result{
+				Requeue:      true,
+				RequeueAfter: retry,
+			}, nil
+		}
+		if endpointId != nil {
+			endpointIds = append(endpointIds, *endpointId)
+		}
 
-		default:
-			klog.Warningf("Not implemented provider: %s", provider)
-			continue
-		}
 	}
 
 	// Update status
@@ -148,5 +112,123 @@ func (c *EndpointGroupBindingController) reconcileCreate(ctx context.Context, ob
 }
 
 func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, obj *endpointgroupbindingv1alpha1.EndpointGroupBinding, cloud *cloudaws.AWS) (reconcile.Result, error) {
+	// Check the different between the current service/ingress load balancer ARNs and status.endpointIds
+	// If the ARN is not in the status.endpointIds, add it to the endpoint group
+	// If status.endpointIds is not in the ARN, remove it from the endpoint group
+
+	arns := map[string]string{}
+	hostnames, err := c.getLoadBalancerHostName(obj)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	for _, hostname := range hostnames {
+		name, region, err := cloudaws.GetLBNameFromHostname(hostname)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		cloud := cloudaws.NewAWS(region)
+		lb, err := cloud.GetLoadBalancer(ctx, name)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		arns[*lb.LoadBalancerArn] = name
+	}
+
+	newEndpointIds := []string{}
+	removedEndpointIds := []string{}
+	for _, arn := range arns {
+		if !slices.Contains(obj.Status.EndpointIds, arn) {
+			newEndpointIds = append(newEndpointIds, arn)
+		}
+	}
+	for _, endpointId := range obj.Status.EndpointIds {
+		if !slices.Contains(maps.Keys(arns), endpointId) {
+			removedEndpointIds = append(removedEndpointIds, endpointId)
+		}
+	}
+
+	endpoint, err := cloud.DescribeEndpointGroup(ctx, obj.Spec.EndpointGroupArn)
+	if err != nil {
+		klog.Error(err)
+		return reconcile.Result{}, err
+	}
+
+	results := obj.Status.EndpointIds
+
+	for _, endpointId := range removedEndpointIds {
+		err := cloud.RemoveLBFromEdnpointGroup(ctx, endpoint, endpointId)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		results = slices.DeleteFunc(results, func(e string) bool {
+			return e == endpointId
+		})
+	}
+
+	for _, endpointId := range newEndpointIds {
+		id, retry, err := cloud.AddLBToEndpointGroup(ctx, endpoint, arns[endpointId], obj.Spec.ClientIPPreservation)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		if retry > 0 {
+			return reconcile.Result{
+				Requeue:      true,
+				RequeueAfter: retry,
+			}, nil
+		}
+		if id != nil {
+			results = append(results, *id)
+		}
+	}
+
+	copied := obj.DeepCopy()
+	copied.Status.EndpointIds = results
+	copied.Status.ObservedGeneration = obj.Generation
+	_, err = c.client.OperatorV1alpha1().EndpointGroupBindings(copied.Namespace).UpdateStatus(ctx, copied, metav1.UpdateOptions{})
+
+	if err != nil {
+		klog.Error(err)
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{}, nil
+}
+
+func (c *EndpointGroupBindingController) getLoadBalancerHostName(obj *endpointgroupbindingv1alpha1.EndpointGroupBinding) ([]string, error) {
+	hostnames := []string{}
+	if obj.Spec.ServiceRef != nil {
+		service, err := c.serviceLister.Services(obj.Namespace).Get(obj.Spec.ServiceRef.Name)
+		if err != nil {
+			klog.Error(err)
+			return []string{}, err
+		}
+		if len(service.Status.LoadBalancer.Ingress) < 1 {
+			klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", service.Namespace, service.Name)
+			return []string{}, nil
+		}
+		for i := range service.Status.LoadBalancer.Ingress {
+			hostnames = append(hostnames, service.Status.LoadBalancer.Ingress[i].Hostname)
+		}
+	} else if obj.Spec.IngressRef != nil {
+		ingress, err := c.ingressLister.Ingresses(obj.Namespace).Get(obj.Spec.IngressRef.Name)
+		if err != nil {
+			klog.Error(err)
+			return []string{}, err
+		}
+		if len(ingress.Status.LoadBalancer.Ingress) < 1 {
+			klog.Warningf("%s/%s does not have ingress LoadBalancer, so skip it", ingress.Namespace, ingress.Name)
+			return []string{}, nil
+		}
+		for i := range ingress.Status.LoadBalancer.Ingress {
+			hostnames = append(hostnames, ingress.Status.LoadBalancer.Ingress[i].Hostname)
+		}
+	} else {
+		klog.Errorf("EndpointGroupBinding %s does not have serviceRef or ingressRef", obj.Name)
+		return []string{}, nil
+	}
+	return hostnames, nil
 }

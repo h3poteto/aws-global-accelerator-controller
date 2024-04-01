@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
+	endpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/endpointgroupbinding/v1alpha1"
 	ownclientset "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/clientset/versioned"
 	ownscheme "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/clientset/versioned/scheme"
 	owninformers "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/informers/externalversions"
@@ -81,6 +82,13 @@ func NewEndpointGroupBindingController(kubeclient kubernetes.Interface, ownclien
 	endpoingGroupBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueue,
 		UpdateFunc: func(old, new interface{}) {
+			// TODO: Block changing spec.EndpointGroupArn field in ValidatingWebhook
+			oldEG := old.(*endpointgroupbindingv1alpha1.EndpointGroupBinding)
+			newEG := new.(*endpointgroupbindingv1alpha1.EndpointGroupBinding)
+			if oldEG.Spec.EndpointGroupArn != newEG.Spec.EndpointGroupArn {
+				klog.Error("Do not allow changing EndpointGroupArn field")
+				return
+			}
 			controller.enqueue(new)
 		},
 	})

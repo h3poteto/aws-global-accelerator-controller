@@ -15,8 +15,11 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.endpointArn
-      name: EndpointArn
+    - jsonPath: .spec.endpointGroupArn
+      name: EndpointGroupArn
+      type: string
+    - jsonPath: .status.endpointIds
+      name: EndpointIds
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age

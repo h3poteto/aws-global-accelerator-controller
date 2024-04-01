@@ -9,7 +9,8 @@ import (
 // +kubebuilder:object:root=true
 
 // EndpointGroupBinding
-// +kubebuilder:printcolumn:name="EndpointArn",type=string,JSONPath=`.status.endpointArn`
+// +kubebuilder:printcolumn:name="EndpointGroupArn",type=string,JSONPath=`.spec.endpointGroupArn`
+// +kubebuilder:printcolumn:name="EndpointIds",type=string,JSONPath=`.status.endpointIds`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type EndpointGroupBinding struct {
 	metav1.TypeMeta   `json:",inline"`
