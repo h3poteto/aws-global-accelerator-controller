@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/endpointgroupbinding"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/globalaccelerator"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/controller/route53"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/leaderelection"
@@ -63,6 +64,9 @@ func (o *options) run(cmd *cobra.Command, args []string) {
 		Route53: &route53.Route53Config{
 			Workers:     o.workers,
 			ClusterName: o.clusterName,
+		},
+		EndpointGroupBinding: &endpointgroupbinding.EndpointGroupBindingConfig{
+			Workers: o.workers,
 		},
 	}
 

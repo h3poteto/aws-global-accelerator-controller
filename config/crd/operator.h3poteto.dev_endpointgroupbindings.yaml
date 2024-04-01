@@ -65,15 +65,19 @@ spec:
                 type: integer
             required:
             - endpointGroupArn
-            - ingressRef
-            - serviceRef
             type: object
           status:
             properties:
-              endpointArn:
-                type: string
+              endpointIds:
+                items:
+                  type: string
+                type: array
+              observedGeneration:
+                format: int64
+                type: integer
             required:
-            - endpointArn
+            - endpointIds
+            - observedGeneration
             type: object
         type: object
     served: true

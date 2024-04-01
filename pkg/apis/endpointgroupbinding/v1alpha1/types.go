@@ -32,8 +32,10 @@ type EndpointGroupBindingSpec struct {
 	// +kubebuilder:default=0
 	Weight int64 `json:"weight"`
 
-	ServiceRef ServiceReference `json:"serviceRef"`
-	IngressRef IngressReference `json:"ingressRef"`
+	// +optional
+	ServiceRef *ServiceReference `json:"serviceRef"`
+	// +optional
+	IngressRef *IngressReference `json:"ingressRef"`
 }
 
 type ServiceReference struct {
@@ -45,7 +47,8 @@ type IngressReference struct {
 }
 
 type EndpointGroupBindingStatus struct {
-	EndpointArn string `json:"endpointArn"`
+	EndpointIds        []string `json:"endpointIds"`
+	ObservedGeneration int64    `json:"observedGeneration"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

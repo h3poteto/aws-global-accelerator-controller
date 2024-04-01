@@ -534,6 +534,35 @@ func tagsContainsAllValues(tags []*globalaccelerator.Tag, targetTags map[string]
 	return true
 }
 
+func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *globalaccelerator.EndpointGroup, lbName string, ipPreserve bool) (*string, time.Duration, error) {
+	// Describe the LB
+	lb, err := a.GetLoadBalancer(ctx, lbName)
+	if err != nil {
+		klog.Error(err)
+		return nil, 0, err
+	}
+	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
+		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
+		return nil, 30 * time.Second, nil
+	}
+
+	endpointId, err := a.addEndpoint(ctx, *endpointGroup.EndpointGroupArn, *lb.LoadBalancerArn, ipPreserve)
+	if err != nil {
+		klog.Error(err)
+		return nil, 0, err
+	}
+	return endpointId, 0, nil
+}
+
+func (a *AWS) RemoveLBFromEdnpointGroup(ctx context.Context, endpointGroup *globalaccelerator.EndpointGroup, endpointId string) error {
+	err := a.removeEndpoint(ctx, *endpointGroup.EndpointGroupArn, endpointId)
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+	return nil
+}
+
 // ---------------------------------
 // Accelerator methods
 // ---------------------------------
@@ -772,6 +801,17 @@ func (a *AWS) deleteListener(ctx context.Context, arn string) error {
 // ---------------------------------
 // EndpointGroup methods
 // ---------------------------------
+func (a *AWS) DescribeEndpointGroup(ctx context.Context, endpointGroupArn string) (*globalaccelerator.EndpointGroup, error) {
+	input := &globalaccelerator.DescribeEndpointGroupInput{
+		EndpointGroupArn: aws.String(endpointGroupArn),
+	}
+	res, err := a.ga.DescribeEndpointGroupWithContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return res.EndpointGroup, nil
+}
+
 func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*globalaccelerator.EndpointGroup, error) {
 	input := &globalaccelerator.ListEndpointGroupsInput{
 		ListenerArn: aws.String(listenerArn),
@@ -792,6 +832,36 @@ func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*global
 		return nil, errors.New("Too many endpoint groups")
 	}
 	return endpointGroups[0], nil
+}
+
+func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, ipPreserve bool) (*string, error) {
+	input := &globalaccelerator.AddEndpointsInput{
+		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{},
+		EndpointGroupArn:       aws.String(endpointGroupArn),
+	}
+	res, err := a.ga.AddEndpointsWithContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	klog.Infof("Endpoint is added: %s", *res.EndpointDescriptions[0].EndpointId)
+	return res.EndpointDescriptions[0].EndpointId, nil
+}
+
+func (a *AWS) removeEndpoint(ctx context.Context, endpointGroupArn, endpointId string) error {
+	input := &globalaccelerator.RemoveEndpointsInput{
+		EndpointGroupArn: aws.String(endpointGroupArn),
+		EndpointIdentifiers: []*globalaccelerator.EndpointIdentifier{
+			&globalaccelerator.EndpointIdentifier{
+				EndpointId: aws.String(endpointId),
+			},
+		},
+	}
+	_, err := a.ga.RemoveEndpointsWithContext(ctx, input)
+	if err != nil {
+		return err
+	}
+	klog.Infof("Endpoint is removed: %s", endpointId)
+	return nil
 }
 
 func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerator.Listener, lbArn *string, region string, ipPreserve bool) (*globalaccelerator.EndpointGroup, error) {
