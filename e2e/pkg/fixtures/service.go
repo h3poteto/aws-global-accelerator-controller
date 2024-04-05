@@ -13,7 +13,7 @@ func NewNLBService(ns, name, hostname string) *corev1.Service {
 			Name:      name,
 			Namespace: ns,
 			Annotations: map[string]string{
-				apis.AWSGlobalAcceleratorManagedAnnotation:                                       "yes",
+				apis.AWSGlobalAcceleratorManagedAnnotation:                                       "true",
 				apis.Route53HostnameAnnotation:                                                   hostname,
 				"service.beta.kubernetes.io/aws-load-balancer-backend-protocol":                  "tcp",
 				"service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true",
