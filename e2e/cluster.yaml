@@ -60,6 +60,8 @@ spec:
                   "globalaccelerator:CreateEndpointGroup",
                   "globalaccelerator:UpdateEndpointGroup",
                   "globalaccelerator:DeleteEndpointGroup",
+                  "globalaccelerator:AddEndpoints",
+                  "globalaccelerator:RemoveEndpoints",
                   "route53:ChangeResourceRecordSets",
                   "route53:ListHostedZones",
                   "route53:ListHostedzonesByName",

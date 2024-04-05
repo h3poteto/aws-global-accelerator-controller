@@ -12,7 +12,7 @@ AWS Global Accelerator Controller is a controller to manage Global Accelerator f
 - Create Route53 records associated with the Global Accelerator
 
 
-## Install
+# Install
 You can install this controller using helm.
 
 ```
@@ -20,7 +20,7 @@ $ helm repo add h3poteto-stable https://h3poteto.github.io/charts/stable
 $ helm install global-accelerator-controller --namespace kube-system h3poteto-stable/aws-global-accelerator-controller
 ```
 
-### Setup IAM Policy
+## Setup IAM Policy
 This controller requires these permissions, so please assign this policy to the controller pod using [IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html), [kube2iam](https://github.com/jtblin/kube2iam) or [kiam](https://github.com/uswitch/kiam).
 
 ```json
@@ -44,6 +44,8 @@ This controller requires these permissions, so please assign this policy to the 
       "globalaccelerator:CreateEndpointGroup",
       "globalaccelerator:UpdateEndpointGroup",
       "globalaccelerator:DeleteEndpointGroup",
+      "globalaccelerator:AddEndpoints",
+      "globalaccelerator:RemoveEndpoints",
       "route53:ChangeResourceRecordSets",
       "route53:ListHostedZones",
       "route53:ListHostedzonesByName",
@@ -57,17 +59,17 @@ This controller requires these permissions, so please assign this policy to the 
 }
 ```
 
-## Usage
-### Create Global Accelerator
+# Usage
+## Create Global Accelerator
 
-Please add an annotation `aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"` to your service or ingress.
+Please add an annotation `aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "true"` to your service or ingress.
 
 ```yaml
 apiVersion: v1
 kind: Service
 metadata:
   annotations:
-    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
+    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "true"
     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
     service.beta.kubernetes.io/aws-load-balancer-type: nlb
@@ -101,7 +103,7 @@ metadata:
   name: h3poteto-test
   namespace: default
   annotations:
-    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
+    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "true"
     alb.ingress.kubernetes.io/scheme: internet-facing
 spec:
   ingressClassName: alb
@@ -117,7 +119,7 @@ spec:
               number: 80
 ```
 
-### Create route53 records associated with the Global Accelerator
+## Create route53 records associated with the Global Accelerator
 Please add an annotation `aws-global-accelerator-controller.h3poteto.dev/route53-hostname` in addition to `global-ccelerator-managed` annotation. And specify your hostname to the annotation.
 
 ```yaml
@@ -125,7 +127,7 @@ apiVersion: v1
 kind: Service
 metadata:
   annotations:
-    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
+    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "true"
     aws-global-accelerator-controller.h3poteto.dev/route53-hostname: "foo.h3poteto-test.dev"
     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
@@ -158,7 +160,7 @@ metadata:
   name: h3poteto-test
   namespace: default
   annotations:
-    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
+    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "true"
     aws-global-accelerator-controller.h3poteto.dev/route53-hostname: "foo.h3poteto-test.dev,bar.h3poteto-test.dev"
     alb.ingress.kubernetes.io/scheme: internet-facing
 spec:
@@ -175,11 +177,67 @@ spec:
               number: 80
 ```
 
-## Development
-```
-$ export KUBECONFIG=$HOME/.kube/config
-$ go run ./main.go controller --v=4
+## EndpointGroupBinding
+EndpointGroupBinding is a custom resourse that can connect your service (Load Balancer) to an existing Global Accelerator Endpoint Group. This will allow you to manage Global Accelerator outside of Kubernetes, and you can bind multiple services (Load Balancers) to an Global Accelerator Endpoint Group.
+
+
+At first, please create a service with Load Balancer.
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-proxy-protocol : "*"
+    service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: proxy_protocol_v2.enabled=true,preserve_client_ip.enabled=true
+  name: h3poteto-test
+  namespace: default
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: h3poteto
+  sessionAffinity: None
+  type: LoadBalancer
+
 ```
 
-## License
+Then, please create an EndpointGroupBinding resource.
+
+```yaml
+apiVersion: operator.h3poteto.dev/v1alpha1
+kind: EndpointGroupBinding
+metadata:
+  name: h3poteto-test
+  namespace: default
+spec:
+  endpointGroupArn: <arn-to-endpoint-group>
+  serviceRef:
+    name: h3poteto-test
+```
+
+# Annotations
+Annotations for service or ingress resources.
+
+| Annotation | Values |
+|:--------|:---------|
+|`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed`| `true` |
+|`aws-global-accelerator-controller.h3poteto.dev/route53-hostname`|your-host-name|
+|`aws-global-accelerator-controller.h3poteto.dev/client-ip-preservation`| `true` |
+
+# Development
+```
+$ export KUBECONFIG=$HOME/.kube/config
+$ make install
+$ make run
+```
+
+# License
 The software is available as open source under the terms of the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
