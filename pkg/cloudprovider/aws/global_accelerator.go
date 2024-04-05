@@ -836,12 +836,20 @@ func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*global
 
 func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, ipPreserve bool) (*string, error) {
 	input := &globalaccelerator.AddEndpointsInput{
-		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{},
-		EndpointGroupArn:       aws.String(endpointGroupArn),
+		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{
+			&globalaccelerator.EndpointConfiguration{
+				EndpointId:                  aws.String(lbArn),
+				ClientIPPreservationEnabled: aws.Bool(ipPreserve),
+			},
+		},
+		EndpointGroupArn: aws.String(endpointGroupArn),
 	}
 	res, err := a.ga.AddEndpointsWithContext(ctx, input)
 	if err != nil {
 		return nil, err
+	}
+	if res.EndpointDescriptions == nil || len(res.EndpointDescriptions) <= 0 {
+		return nil, errors.New("No endpoint is added")
 	}
 	klog.Infof("Endpoint is added: %s", *res.EndpointDescriptions[0].EndpointId)
 	return res.EndpointDescriptions[0].EndpointId, nil

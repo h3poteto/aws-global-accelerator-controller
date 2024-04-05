@@ -9,6 +9,7 @@ import (
 // +kubebuilder:object:root=true
 
 // EndpointGroupBinding
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="EndpointGroupArn",type=string,JSONPath=`.spec.endpointGroupArn`
 // +kubebuilder:printcolumn:name="EndpointIds",type=string,JSONPath=`.status.endpointIds`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
@@ -48,8 +49,13 @@ type IngressReference struct {
 }
 
 type EndpointGroupBindingStatus struct {
-	EndpointIds        []string `json:"endpointIds"`
-	ObservedGeneration int64    `json:"observedGeneration"`
+	// +optional
+	// +kubebuilder:validation:Type:=array
+	EndpointIds []string `json:"endpointIds"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Type:=integer
+	// +kubebuilder:default=0
+	ObservedGeneration int64 `json:"observedGeneration"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

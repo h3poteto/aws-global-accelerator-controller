@@ -69,6 +69,7 @@ func (m *manager) Run(ctx context.Context, clientConfig *rest.Config, config *Co
 	}
 
 	go informerFactory.Start(stopCh)
+	go ownInformerFactory.Start(stopCh)
 
 	wg.Wait()
 

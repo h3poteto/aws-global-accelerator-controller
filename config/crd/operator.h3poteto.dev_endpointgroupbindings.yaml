@@ -76,13 +76,14 @@ spec:
                   type: string
                 type: array
               observedGeneration:
+                default: 0
                 format: int64
                 type: integer
             required:
-            - endpointIds
             - observedGeneration
             type: object
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

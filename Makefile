@@ -25,6 +25,8 @@ build: codegen manifests
 run: codegen manifests
 	go run ./main.go controller --kubeconfig=${KUBECONFIG}
 
+install: manifests
+	kubectl apply -f ./config/crd
 
 clean:
 	rm -f $(GOBIN)/controller-gen

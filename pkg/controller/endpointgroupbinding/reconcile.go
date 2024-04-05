@@ -3,6 +3,7 @@ package endpointgroupbinding
 import (
 	"context"
 	"slices"
+	"time"
 
 	"golang.org/x/exp/maps"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,13 +21,24 @@ func (c *EndpointGroupBindingController) reconcile(ctx context.Context, obj *end
 	if obj.DeletionTimestamp != nil {
 		return c.reconcileDelete(ctx, obj, cloud)
 	}
-	if len(obj.Status.EndpointIds) == 0 {
+	if len(obj.Finalizers) == 0 {
 		return c.reconcileCreate(ctx, obj, cloud)
 	}
 	return c.reconcileUpdate(ctx, obj, cloud)
 }
 
 func (c *EndpointGroupBindingController) reconcileDelete(ctx context.Context, obj *endpointgroupbindingv1alpha1.EndpointGroupBinding, cloud *cloudaws.AWS) (reconcile.Result, error) {
+	if len(obj.Status.EndpointIds) == 0 {
+		copied := obj.DeepCopy()
+		copied.Finalizers = []string{}
+		_, err := c.client.OperatorV1alpha1().EndpointGroupBindings(copied.Namespace).Update(ctx, copied, metav1.UpdateOptions{})
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		return reconcile.Result{}, nil
+	}
+
 	endpoint, err := cloud.DescribeEndpointGroup(ctx, obj.Spec.EndpointGroupArn)
 	if err != nil {
 		klog.Error(err)
@@ -47,62 +59,20 @@ func (c *EndpointGroupBindingController) reconcileDelete(ctx context.Context, ob
 	copied := obj.DeepCopy()
 	copied.Status.EndpointIds = endpointIds
 	copied.Status.ObservedGeneration = obj.Generation
-	copied.Finalizers = []string{}
-	_, err = c.client.OperatorV1alpha1().EndpointGroupBindings(copied.Namespace).Update(ctx, copied, metav1.UpdateOptions{})
+	_, err = c.client.OperatorV1alpha1().EndpointGroupBindings(copied.Namespace).UpdateStatus(ctx, copied, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
 	}
 
-	return reconcile.Result{}, nil
+	return reconcile.Result{Requeue: true, RequeueAfter: 1 * time.Second}, nil
 }
 
-func (c *EndpointGroupBindingController) reconcileCreate(ctx context.Context, obj *endpointgroupbindingv1alpha1.EndpointGroupBinding, cloud *cloudaws.AWS) (reconcile.Result, error) {
-
-	endpoint, err := cloud.DescribeEndpointGroup(ctx, obj.Spec.EndpointGroupArn)
-	if err != nil {
-		klog.Error(err)
-		return reconcile.Result{}, err
-	}
-
-	hostnames, err := c.getLoadBalancerHostName(obj)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	endpointIds := []string{}
-	for _, hostname := range hostnames {
-
-		// Get load balancer name and region from the hostname
-		name, region, err := cloudaws.GetLBNameFromHostname(hostname)
-		if err != nil {
-			klog.Error(err)
-			return reconcile.Result{}, err
-		}
-		cloud := cloudaws.NewAWS(region)
-		endpointId, retry, err := cloud.AddLBToEndpointGroup(ctx, endpoint, name, obj.Spec.ClientIPPreservation)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		if retry > 0 {
-			return reconcile.Result{
-				Requeue:      true,
-				RequeueAfter: retry,
-			}, nil
-		}
-		if endpointId != nil {
-			endpointIds = append(endpointIds, *endpointId)
-		}
-
-	}
-
-	// Update status
+func (c *EndpointGroupBindingController) reconcileCreate(ctx context.Context, obj *endpointgroupbindingv1alpha1.EndpointGroupBinding, _ *cloudaws.AWS) (reconcile.Result, error) {
 	copied := obj.DeepCopy()
-	copied.Status.EndpointIds = endpointIds
-	copied.Status.ObservedGeneration = obj.Generation
 	copied.Finalizers = []string{finalizer}
-	_, err = c.client.OperatorV1alpha1().EndpointGroupBindings(copied.Namespace).Update(ctx, copied, metav1.UpdateOptions{})
 
+	_, err := c.client.OperatorV1alpha1().EndpointGroupBindings(copied.Namespace).Update(ctx, copied, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -121,24 +91,26 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+	var regionalCloud *cloudaws.AWS
 	for _, hostname := range hostnames {
 		name, region, err := cloudaws.GetLBNameFromHostname(hostname)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
 		}
-		cloud := cloudaws.NewAWS(region)
-		lb, err := cloud.GetLoadBalancer(ctx, name)
+		regionalCloud = cloudaws.NewAWS(region)
+		lb, err := regionalCloud.GetLoadBalancer(ctx, name)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
 		}
 		arns[*lb.LoadBalancerArn] = name
 	}
+	klog.V(4).Infof("Service LoadBalancer ARNs: %v", arns)
 
 	newEndpointIds := []string{}
 	removedEndpointIds := []string{}
-	for _, arn := range arns {
+	for arn, _ := range arns {
 		if !slices.Contains(obj.Status.EndpointIds, arn) {
 			newEndpointIds = append(newEndpointIds, arn)
 		}
@@ -147,6 +119,11 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 		if !slices.Contains(maps.Keys(arns), endpointId) {
 			removedEndpointIds = append(removedEndpointIds, endpointId)
 		}
+	}
+	klog.V(4).Infof("New EndpointIds: %v", newEndpointIds)
+	klog.V(4).Infof("Removed EndpointIds: %v", removedEndpointIds)
+	if len(newEndpointIds) == 0 && len(removedEndpointIds) == 0 && obj.Status.ObservedGeneration == obj.Generation {
+		return reconcile.Result{}, nil
 	}
 
 	endpoint, err := cloud.DescribeEndpointGroup(ctx, obj.Spec.EndpointGroupArn)
@@ -158,7 +135,7 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 	results := obj.Status.EndpointIds
 
 	for _, endpointId := range removedEndpointIds {
-		err := cloud.RemoveLBFromEdnpointGroup(ctx, endpoint, endpointId)
+		err := regionalCloud.RemoveLBFromEdnpointGroup(ctx, endpoint, endpointId)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
@@ -169,7 +146,7 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 	}
 
 	for _, endpointId := range newEndpointIds {
-		id, retry, err := cloud.AddLBToEndpointGroup(ctx, endpoint, arns[endpointId], obj.Spec.ClientIPPreservation)
+		id, retry, err := regionalCloud.AddLBToEndpointGroup(ctx, endpoint, arns[endpointId], obj.Spec.ClientIPPreservation)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
