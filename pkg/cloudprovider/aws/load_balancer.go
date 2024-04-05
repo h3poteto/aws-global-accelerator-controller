@@ -91,3 +91,8 @@ func nlbName(subdomain string) (string, error) {
 	}
 	return result[0][1], nil
 }
+
+func GetRegionFromARN(arn string) string {
+	slice := strings.Split(arn, ":")
+	return slice[3]
+}

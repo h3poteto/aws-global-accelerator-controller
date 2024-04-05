@@ -8,10 +8,12 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 CRD_OPTIONS ?= "crd"
+CODE_GENERATOR=${GOPATH}/src/k8s.io/code-generator
+CODE_GENERATOR_TAG=v0.28.8
 CONTROLLER_TOOLS_TAG=v0.13.0
 BRANCH := $(shell git branch --show-current)
 
-build: manifests
+build: codegen manifests
 	go build -a -tags netgo -installsuffix netgo -ldflags \
 " \
   -extldflags '-static' \
@@ -20,15 +22,30 @@ build: manifests
   -X github.com/h3poteto/aws-global-accelerator-controller/cmd.build=$(shell git describe --tags) \
 "
 
-run: manifests
+run: codegen manifests
 	go run ./main.go controller --kubeconfig=${KUBECONFIG}
 
+install: manifests
+	kubectl apply -f ./config/crd
 
 clean:
 	rm -f $(GOBIN)/controller-gen
+	rm -rf $(CODE_GENERATOR)
+
+codegen: code-generator
+	${CODE_GENERATOR}/generate-groups.sh "deepcopy,client,informer,lister" \
+	github.com/h3poteto/aws-global-accelerator-controller/pkg/client github.com/h3poteto/aws-global-accelerator-controller/pkg/apis \
+	endpointgroupbinding:v1alpha1 \
+    -h boilerplate.go.txt
+
+code-generator:
+ifeq (, $(wildcard ${CODE_GENERATOR}))
+	git clone https://github.com/kubernetes/code-generator.git ${CODE_GENERATOR} -b ${CODE_GENERATOR_TAG} --depth 1
+endif
+
 
 manifests: controller-gen
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role paths=./...
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role paths=./... output:crd:artifacts:config=./config/crd/
 
 
 controller-gen:

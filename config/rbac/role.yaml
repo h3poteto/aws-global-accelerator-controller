@@ -59,3 +59,23 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - operator.aws.h3poteto.dev
+  resources:
+  - endpointgroupbindings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - operator.aws.h3poteto.dev
+  resources:
+  - endpointgroupbindings/status
+  verbs:
+  - get
+  - patch
+  - update
