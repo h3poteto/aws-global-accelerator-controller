@@ -3,29 +3,29 @@ package aws
 import (
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/globalaccelerator"
-	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestFindARecord(t *testing.T) {
 	cases := []struct {
 		title    string
-		records  []*route53.ResourceRecordSet
+		records  []route53types.ResourceRecordSet
 		hostname string
-		expected *route53.ResourceRecordSet
+		expected *route53types.ResourceRecordSet
 	}{
 		{
 			title: "Does not contain A record",
-			records: []*route53.ResourceRecordSet{
-				&route53.ResourceRecordSet{
+			records: []route53types.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("foo.example.com."),
-					Type: aws.String(route53.RRTypeCname),
+					Type: route53types.RRTypeCname,
 				},
-				&route53.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("bar.example.com."),
-					Type: aws.String(route53.RRTypeCname),
+					Type: route53types.RRTypeCname,
 				},
 			},
 			hostname: "foo.example.com",
@@ -33,14 +33,14 @@ func TestFindARecord(t *testing.T) {
 		},
 		{
 			title: "Does not contain hostname",
-			records: []*route53.ResourceRecordSet{
-				&route53.ResourceRecordSet{
+			records: []route53types.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("foo.example.com."),
-					Type: aws.String(route53.RRTypeA),
+					Type: route53types.RRTypeA,
 				},
-				&route53.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("bar.example.com."),
-					Type: aws.String(route53.RRTypeA),
+					Type: route53types.RRTypeA,
 				},
 			},
 			hostname: "baz.example.com",
@@ -48,38 +48,38 @@ func TestFindARecord(t *testing.T) {
 		},
 		{
 			title: "Contains hostname",
-			records: []*route53.ResourceRecordSet{
-				&route53.ResourceRecordSet{
+			records: []route53types.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("foo.example.com."),
-					Type: aws.String(route53.RRTypeA),
+					Type: route53types.RRTypeA,
 				},
-				&route53.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("bar.example.com."),
-					Type: aws.String(route53.RRTypeA),
+					Type: route53types.RRTypeA,
 				},
 			},
 			hostname: "bar.example.com",
-			expected: &route53.ResourceRecordSet{
+			expected: &route53types.ResourceRecordSet{
 				Name: aws.String("bar.example.com."),
-				Type: aws.String(route53.RRTypeA),
+				Type: route53types.RRTypeA,
 			},
 		},
 		{
 			title: "Contains wildcard record",
-			records: []*route53.ResourceRecordSet{
-				&route53.ResourceRecordSet{
+			records: []route53types.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("\\052.example.com."),
-					Type: aws.String(route53.RRTypeA),
+					Type: route53types.RRTypeA,
 				},
-				&route53.ResourceRecordSet{
+				route53types.ResourceRecordSet{
 					Name: aws.String("bar.example.com."),
-					Type: aws.String(route53.RRTypeA),
+					Type: route53types.RRTypeA,
 				},
 			},
 			hostname: "*.example.com",
-			expected: &route53.ResourceRecordSet{
+			expected: &route53types.ResourceRecordSet{
 				Name: aws.String("\\052.example.com."),
-				Type: aws.String(route53.RRTypeA),
+				Type: route53types.RRTypeA,
 			},
 		},
 	}
@@ -94,40 +94,40 @@ func TestFindARecord(t *testing.T) {
 func TestNeedRecordsUpdate(t *testing.T) {
 	cases := []struct {
 		title       string
-		record      *route53.ResourceRecordSet
-		accelerator *globalaccelerator.Accelerator
+		record      *route53types.ResourceRecordSet
+		accelerator *gatypes.Accelerator
 		expected    bool
 	}{
 		{
 			title: "Alias is nil",
-			record: &route53.ResourceRecordSet{
+			record: &route53types.ResourceRecordSet{
 				Name: aws.String("foo.example.com"),
 			},
-			accelerator: &globalaccelerator.Accelerator{},
+			accelerator: &gatypes.Accelerator{},
 			expected:    true,
 		},
 		{
 			title: "Alias DNS name is not matched",
-			record: &route53.ResourceRecordSet{
+			record: &route53types.ResourceRecordSet{
 				Name: aws.String("foo.example.com"),
-				AliasTarget: &route53.AliasTarget{
+				AliasTarget: &route53types.AliasTarget{
 					DNSName: aws.String("foo.example.com."),
 				},
 			},
-			accelerator: &globalaccelerator.Accelerator{
+			accelerator: &gatypes.Accelerator{
 				DnsName: aws.String("bar.example.com"),
 			},
 			expected: true,
 		},
 		{
 			title: "Alias DNS name is matched",
-			record: &route53.ResourceRecordSet{
+			record: &route53types.ResourceRecordSet{
 				Name: aws.String("foo.example.com"),
-				AliasTarget: &route53.AliasTarget{
+				AliasTarget: &route53types.AliasTarget{
 					DNSName: aws.String("foo.example.com."),
 				},
 			},
-			accelerator: &globalaccelerator.Accelerator{
+			accelerator: &gatypes.Accelerator{
 				DnsName: aws.String("foo.example.com"),
 			},
 			expected: false,

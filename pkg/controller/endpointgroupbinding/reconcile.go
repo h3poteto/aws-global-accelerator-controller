@@ -17,7 +17,12 @@ import (
 const finalizer = "operator.h3poteto.dev/endpointgroupbindings"
 
 func (c *EndpointGroupBindingController) reconcile(ctx context.Context, obj *endpointgroupbindingv1alpha1.EndpointGroupBinding) (reconcile.Result, error) {
-	cloud := cloudaws.NewAWS("us-west-2")
+	cloud, err := cloudaws.NewAWS("us-west-2")
+	if err != nil {
+		klog.Error(err)
+		return reconcile.Result{}, err
+	}
+
 	if obj.DeletionTimestamp != nil {
 		return c.reconcileDelete(ctx, obj, cloud)
 	}
@@ -48,8 +53,13 @@ func (c *EndpointGroupBindingController) reconcileDelete(ctx context.Context, ob
 	for i := range obj.Status.EndpointIds {
 		id := obj.Status.EndpointIds[i]
 		region := cloudaws.GetRegionFromARN(id)
-		cloud := cloudaws.NewAWS(region)
-		err := cloud.RemoveLBFromEdnpointGroup(ctx, endpoint, id)
+		cloud, err := cloudaws.NewAWS(region)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+
+		err = cloud.RemoveLBFromEdnpointGroup(ctx, endpoint, id)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -98,7 +108,11 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 			klog.Error(err)
 			return reconcile.Result{}, err
 		}
-		regionalCloud = cloudaws.NewAWS(region)
+		regionalCloud, err = cloudaws.NewAWS(region)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
 		lb, err := regionalCloud.GetLoadBalancer(ctx, name)
 		if err != nil {
 			klog.Error(err)

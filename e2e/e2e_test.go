@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/globalaccelerator"
+	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
 	"github.com/h3poteto/aws-global-accelerator-controller/e2e/pkg/fixtures"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 
@@ -118,7 +118,8 @@ var _ = Describe("E2E", func() {
 
 				lbName, region, err := cloudaws.GetLBNameFromHostname(svc.Status.LoadBalancer.Ingress[0].Hostname)
 				Expect(err).ShouldNot(HaveOccurred())
-				cloud := cloudaws.NewAWS(region)
+				cloud, err := cloudaws.NewAWS(region)
+				Expect(err).ShouldNot(HaveOccurred())
 
 				DeferCleanup(func() error {
 					kubeClient.CoreV1().Services(svc.Namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
@@ -174,7 +175,8 @@ var _ = Describe("E2E", func() {
 
 				lbName, region, err := cloudaws.GetLBNameFromHostname(ingress.Status.LoadBalancer.Ingress[0].Hostname)
 				Expect(err).ShouldNot(HaveOccurred())
-				cloud := cloudaws.NewAWS(region)
+				cloud, err := cloudaws.NewAWS(region)
+				Expect(err).ShouldNot(HaveOccurred())
 
 				DeferCleanup(func() error {
 					kubeClient.NetworkingV1().Ingresses(ingress.Namespace).Delete(ctx, ingress.Name, metav1.DeleteOptions{})
@@ -270,7 +272,7 @@ func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, clusterName, resour
 		}
 		for _, accelerator := range accelerators {
 			listener, err := cloud.GetListener(ctx, *accelerator.AcceleratorArn)
-			var listenerNotFoundErr *globalaccelerator.ListenerNotFoundException
+			var listenerNotFoundErr *gatypes.ListenerNotFoundException
 			if errors.As(err, &listenerNotFoundErr) {
 				klog.Info(err.Error())
 				return false, nil
@@ -279,7 +281,7 @@ func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, clusterName, resour
 				return false, err
 			}
 			endpoint, err := cloud.GetEndpointGroup(ctx, *listener.ListenerArn)
-			var endpointNotFoundErr *globalaccelerator.EndpointGroupNotFoundException
+			var endpointNotFoundErr *gatypes.EndpointGroupNotFoundException
 			if errors.As(err, &endpointNotFoundErr) {
 				klog.Info(err.Error())
 				return false, nil

@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/globalaccelerator"
-	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/klog/v2"
@@ -135,40 +136,40 @@ func (a *AWS) CleanupRecordSet(ctx context.Context, clusterName, resource, ns, n
 		return err
 	}
 	for _, zone := range zones {
-		records, err := a.FindOwneredARecordSets(ctx, zone, Route53OwnerValue(clusterName, resource, ns, name))
+		records, err := a.FindOwneredARecordSets(ctx, &zone, Route53OwnerValue(clusterName, resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
 		}
 		for _, record := range records {
-			if err := a.deleteRecord(ctx, zone, record); err != nil {
+			if err := a.deleteRecord(ctx, &zone, &record); err != nil {
 				klog.Error(err)
 				return err
 			}
-			klog.Infof("Record set %s: %s is deleted", *record.Name, *record.Type)
+			klog.Infof("Record set %s: %s is deleted", *record.Name, record.Type)
 		}
-		records, err = a.findOwneredMetadataRecordSets(ctx, zone, Route53OwnerValue(clusterName, resource, ns, name))
+		records, err = a.findOwneredMetadataRecordSets(ctx, &zone, Route53OwnerValue(clusterName, resource, ns, name))
 		if err != nil {
 			klog.Error(err)
 			return err
 		}
 		for _, record := range records {
-			if err := a.deleteRecord(ctx, zone, record); err != nil {
+			if err := a.deleteRecord(ctx, &zone, &record); err != nil {
 				klog.Error(err)
 				return err
 			}
-			klog.Infof("Record set %s: %s is deleted", *record.Name, *record.Type)
+			klog.Infof("Record set %s: %s is deleted", *record.Name, record.Type)
 		}
 	}
 	return nil
 }
 
-func (a *AWS) findOwneredMetadataRecordSets(ctx context.Context, hostedZone *route53.HostedZone, ownerValue string) ([]*route53.ResourceRecordSet, error) {
+func (a *AWS) findOwneredMetadataRecordSets(ctx context.Context, hostedZone *route53types.HostedZone, ownerValue string) ([]route53types.ResourceRecordSet, error) {
 	recordSets, err := a.listRecordSets(ctx, hostedZone.Id)
 	if err != nil {
 		return nil, err
 	}
-	result := []*route53.ResourceRecordSet{}
+	result := []route53types.ResourceRecordSet{}
 	for _, set := range recordSets {
 		for _, record := range set.ResourceRecords {
 			if *record.Value == ownerValue {
@@ -179,38 +180,40 @@ func (a *AWS) findOwneredMetadataRecordSets(ctx context.Context, hostedZone *rou
 	return result, nil
 }
 
-func (a *AWS) deleteRecord(ctx context.Context, hostedZone *route53.HostedZone, record *route53.ResourceRecordSet) error {
+func (a *AWS) deleteRecord(ctx context.Context, hostedZone *route53types.HostedZone, record *route53types.ResourceRecordSet) error {
 	input := &route53.ChangeResourceRecordSetsInput{
 		HostedZoneId: hostedZone.Id,
-		ChangeBatch: &route53.ChangeBatch{
-			Changes: []*route53.Change{
-				&route53.Change{
-					Action:            aws.String(route53.ChangeActionDelete),
+		ChangeBatch: &route53types.ChangeBatch{
+			Changes: []route53types.Change{
+				route53types.Change{
+					Action:            route53types.ChangeActionDelete,
 					ResourceRecordSet: record,
 				},
 			},
 		},
 	}
-	_, err := a.route53.ChangeResourceRecordSetsWithContext(ctx, input)
+	_, err := a.route53.ChangeResourceRecordSets(ctx, input)
 	return err
 }
 
-func (a *AWS) listAllHostedZone(ctx context.Context) ([]*route53.HostedZone, error) {
+func (a *AWS) listAllHostedZone(ctx context.Context) ([]route53types.HostedZone, error) {
 	input := &route53.ListHostedZonesInput{
-		MaxItems: aws.String("100"),
+		MaxItems: aws.Int32(100),
 	}
-	hostedZones := []*route53.HostedZone{}
-	err := a.route53.ListHostedZonesPagesWithContext(ctx, input, func(page *route53.ListHostedZonesOutput, lastPage bool) bool {
+	hostedZones := []route53types.HostedZone{}
+	paginator := route53.NewListHostedZonesPaginator(a.route53, input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
 		hostedZones = append(hostedZones, page.HostedZones...)
-		return true
-	})
-	if err != nil {
-		return nil, err
 	}
+
 	return hostedZones, nil
 }
 
-func (a *AWS) FindOwneredARecordSets(ctx context.Context, hostedZone *route53.HostedZone, ownerValue string) ([]*route53.ResourceRecordSet, error) {
+func (a *AWS) FindOwneredARecordSets(ctx context.Context, hostedZone *route53types.HostedZone, ownerValue string) ([]route53types.ResourceRecordSet, error) {
 	recordSets, err := a.listRecordSets(ctx, hostedZone.Id)
 	if err != nil {
 		return nil, err
@@ -225,7 +228,7 @@ func (a *AWS) FindOwneredARecordSets(ctx context.Context, hostedZone *route53.Ho
 		}
 	}
 	klog.V(4).Infof("Finding A record %v", hostnames)
-	resultSets := []*route53.ResourceRecordSet{}
+	resultSets := []route53types.ResourceRecordSet{}
 	for _, set := range recordSets {
 		if hostnameContains(hostnames, *set.Name) && set.AliasTarget != nil {
 			resultSets = append(resultSets, set)
@@ -234,19 +237,19 @@ func (a *AWS) FindOwneredARecordSets(ctx context.Context, hostedZone *route53.Ho
 	return resultSets, nil
 }
 
-func (a *AWS) createRecordSet(ctx context.Context, hostedZone *route53.HostedZone, hostname string, accelerator *globalaccelerator.Accelerator) error {
+func (a *AWS) createRecordSet(ctx context.Context, hostedZone *route53types.HostedZone, hostname string, accelerator *gatypes.Accelerator) error {
 	input := &route53.ChangeResourceRecordSetsInput{
 		HostedZoneId: hostedZone.Id,
-		ChangeBatch: &route53.ChangeBatch{
-			Changes: []*route53.Change{
-				&route53.Change{
-					Action: aws.String(route53.ChangeActionCreate),
-					ResourceRecordSet: &route53.ResourceRecordSet{
+		ChangeBatch: &route53types.ChangeBatch{
+			Changes: []route53types.Change{
+				route53types.Change{
+					Action: route53types.ChangeActionCreate,
+					ResourceRecordSet: &route53types.ResourceRecordSet{
 						Name: aws.String(hostname),
-						Type: aws.String(route53.RRTypeA),
-						AliasTarget: &route53.AliasTarget{
+						Type: route53types.RRTypeA,
+						AliasTarget: &route53types.AliasTarget{
 							DNSName:              accelerator.DnsName,
-							EvaluateTargetHealth: aws.Bool(true),
+							EvaluateTargetHealth: true,
 							// Hosted Zone of Global Accelerator is determined in:
 							// https://docs.aws.amazon.com/sdk-for-go/api/service/route53/#AliasTarget
 							HostedZoneId: aws.String("Z2BJ6XQ5FK7U4H"),
@@ -256,23 +259,23 @@ func (a *AWS) createRecordSet(ctx context.Context, hostedZone *route53.HostedZon
 			},
 		},
 	}
-	_, err := a.route53.ChangeResourceRecordSetsWithContext(ctx, input)
+	_, err := a.route53.ChangeResourceRecordSets(ctx, input)
 	return err
 }
 
-func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53.HostedZone, hostname, clusterName, resource, ns, name string) error {
+func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53types.HostedZone, hostname, clusterName, resource, ns, name string) error {
 	input := &route53.ChangeResourceRecordSetsInput{
 		HostedZoneId: hostedZone.Id,
-		ChangeBatch: &route53.ChangeBatch{
-			Changes: []*route53.Change{
-				&route53.Change{
-					Action: aws.String(route53.ChangeActionCreate),
-					ResourceRecordSet: &route53.ResourceRecordSet{
+		ChangeBatch: &route53types.ChangeBatch{
+			Changes: []route53types.Change{
+				route53types.Change{
+					Action: route53types.ChangeActionCreate,
+					ResourceRecordSet: &route53types.ResourceRecordSet{
 						Name: aws.String(hostname),
-						Type: aws.String(route53.RRTypeTxt),
+						Type: route53types.RRTypeTxt,
 						TTL:  aws.Int64(300),
-						ResourceRecords: []*route53.ResourceRecord{
-							&route53.ResourceRecord{
+						ResourceRecords: []route53types.ResourceRecord{
+							route53types.ResourceRecord{
 								Value: aws.String(Route53OwnerValue(clusterName, resource, ns, name)),
 							},
 						},
@@ -281,23 +284,23 @@ func (a *AWS) createMetadataRecordSet(ctx context.Context, hostedZone *route53.H
 			},
 		},
 	}
-	_, err := a.route53.ChangeResourceRecordSetsWithContext(ctx, input)
+	_, err := a.route53.ChangeResourceRecordSets(ctx, input)
 	return err
 }
 
-func (a *AWS) updateRecordSet(ctx context.Context, hostedZone *route53.HostedZone, hostname string, accelerator *globalaccelerator.Accelerator) error {
+func (a *AWS) updateRecordSet(ctx context.Context, hostedZone *route53types.HostedZone, hostname string, accelerator *gatypes.Accelerator) error {
 	input := &route53.ChangeResourceRecordSetsInput{
 		HostedZoneId: hostedZone.Id,
-		ChangeBatch: &route53.ChangeBatch{
-			Changes: []*route53.Change{
-				&route53.Change{
-					Action: aws.String(route53.ChangeActionUpsert),
-					ResourceRecordSet: &route53.ResourceRecordSet{
+		ChangeBatch: &route53types.ChangeBatch{
+			Changes: []route53types.Change{
+				route53types.Change{
+					Action: route53types.ChangeActionUpsert,
+					ResourceRecordSet: &route53types.ResourceRecordSet{
 						Name: aws.String(hostname),
-						Type: aws.String(route53.RRTypeA),
-						AliasTarget: &route53.AliasTarget{
+						Type: route53types.RRTypeA,
+						AliasTarget: &route53types.AliasTarget{
 							DNSName:              accelerator.DnsName,
-							EvaluateTargetHealth: aws.Bool(true),
+							EvaluateTargetHealth: true,
 							// Hosted Zone of Global Accelerator is determined in:
 							// https://docs.aws.amazon.com/sdk-for-go/api/service/route53/#AliasTarget
 							HostedZoneId: aws.String("Z2BJ6XQ5FK7U4H"),
@@ -307,27 +310,29 @@ func (a *AWS) updateRecordSet(ctx context.Context, hostedZone *route53.HostedZon
 			},
 		},
 	}
-	_, err := a.route53.ChangeResourceRecordSetsWithContext(ctx, input)
+	_, err := a.route53.ChangeResourceRecordSets(ctx, input)
 	return err
 }
 
-func (a *AWS) listRecordSets(ctx context.Context, hostedZoneID *string) ([]*route53.ResourceRecordSet, error) {
+func (a *AWS) listRecordSets(ctx context.Context, hostedZoneID *string) ([]route53types.ResourceRecordSet, error) {
 	input := &route53.ListResourceRecordSetsInput{
 		HostedZoneId: hostedZoneID,
-		MaxItems:     aws.String("300"),
+		MaxItems:     aws.Int32(300),
 	}
-	recordSets := []*route53.ResourceRecordSet{}
-	err := a.route53.ListResourceRecordSetsPagesWithContext(ctx, input, func(page *route53.ListResourceRecordSetsOutput, lastPage bool) bool {
+	recordSets := []route53types.ResourceRecordSet{}
+	paginator := route53.NewListResourceRecordSetsPaginator(a.route53, input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
 		recordSets = append(recordSets, page.ResourceRecordSets...)
-		return true
-	})
-	if err != nil {
-		return nil, err
 	}
+
 	return recordSets, nil
 }
 
-func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*route53.HostedZone, error) {
+func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*route53types.HostedZone, error) {
 	targetHostname := originalHostname
 	for {
 		if targetHostname == "" {
@@ -336,15 +341,15 @@ func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*rout
 		klog.V(4).Infof("Getting hosted zone for %s", targetHostname)
 		input := &route53.ListHostedZonesByNameInput{
 			DNSName:  aws.String(targetHostname + "."),
-			MaxItems: aws.String("1"),
+			MaxItems: aws.Int32(1),
 		}
-		res, err := a.route53.ListHostedZonesByNameWithContext(ctx, input)
+		res, err := a.route53.ListHostedZonesByName(ctx, input)
 		if err != nil {
 			return nil, err
 		}
 		for _, zone := range res.HostedZones {
 			if *zone.Name == targetHostname+"." {
-				return zone, nil
+				return &zone, nil
 			}
 		}
 		parent := parentDomain(targetHostname)
@@ -352,10 +357,10 @@ func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*rout
 	}
 }
 
-func findARecord(records []*route53.ResourceRecordSet, hostname string) *route53.ResourceRecordSet {
+func findARecord(records []route53types.ResourceRecordSet, hostname string) *route53types.ResourceRecordSet {
 	for _, record := range records {
-		if *record.Type == route53.RRTypeA && replaceWildcards(*record.Name) == hostname+"." {
-			return record
+		if record.Type == route53types.RRTypeA && replaceWildcards(*record.Name) == hostname+"." {
+			return &record
 		}
 	}
 	return nil
@@ -365,7 +370,7 @@ func replaceWildcards(s string) string {
 	return strings.Replace(s, "\\052", "*", 1)
 }
 
-func needRecordsUpdate(record *route53.ResourceRecordSet, accelerator *globalaccelerator.Accelerator) bool {
+func needRecordsUpdate(record *route53types.ResourceRecordSet, accelerator *gatypes.Accelerator) bool {
 	if record.AliasTarget == nil {
 		return true
 	}
