@@ -33,7 +33,11 @@ func (c *GlobalAcceleratorController) processIngressDelete(ctx context.Context, 
 		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("invalid resource key: %s", key)
 	}
 
-	cloud := cloudaws.NewAWS("us-west-2")
+	cloud, err := cloudaws.NewAWS("us-west-2")
+	if err != nil {
+		klog.Error(err)
+		return reconcile.Result{}, err
+	}
 
 	accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.clusterName, "ingress", ns, name)
 	if err != nil {
@@ -60,7 +64,11 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 	}
 
 	if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; !ok {
-		cloud := cloudaws.NewAWS("us-west-2")
+		cloud, err := cloudaws.NewAWS("us-west-2")
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
 		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, c.clusterName, "ingress", ingress.Namespace, ingress.Name)
 		if err != nil {
 			klog.Error(err)
@@ -94,7 +102,11 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
-			cloud := cloudaws.NewAWS(region)
+			cloud, err := cloudaws.NewAWS(region)
+			if err != nil {
+				klog.Error(err)
+				return reconcile.Result{}, err
+			}
 			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, c.clusterName, name, region)
 			if err != nil {
 				return reconcile.Result{}, err

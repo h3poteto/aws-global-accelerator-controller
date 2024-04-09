@@ -32,7 +32,11 @@ func (c *Route53Controller) processServiceDelete(ctx context.Context, key string
 	if err != nil {
 		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("invalid resource key: %s", key)
 	}
-	cloud := cloudaws.NewAWS("us-west-2")
+	cloud, err := cloudaws.NewAWS("us-west-2")
+	if err != nil {
+		klog.Error(err)
+		return reconcile.Result{}, err
+	}
 	err = cloud.CleanupRecordSet(ctx, c.clusterName, "service", ns, name)
 	if err != nil {
 		klog.Error(err)
@@ -49,8 +53,12 @@ func (c *Route53Controller) processServiceCreateOrUpdate(ctx context.Context, ob
 
 	hostname, ok := svc.Annotations[apis.Route53HostnameAnnotation]
 	if !ok {
-		cloud := cloudaws.NewAWS("us-west-2")
-		err := cloud.CleanupRecordSet(ctx, c.clusterName, "service", svc.Namespace, svc.Name)
+		cloud, err := cloudaws.NewAWS("us-west-2")
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
+		}
+		err = cloud.CleanupRecordSet(ctx, c.clusterName, "service", svc.Namespace, svc.Name)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
@@ -76,7 +84,11 @@ func (c *Route53Controller) processServiceCreateOrUpdate(ctx context.Context, ob
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
-			cloud := cloudaws.NewAWS(region)
+			cloud, err := cloudaws.NewAWS(region)
+			if err != nil {
+				klog.Error(err)
+				return reconcile.Result{}, err
+			}
 			created, retryAfter, err := cloud.EnsureRoute53ForService(ctx, svc, &lbIngress, hostnames, c.clusterName)
 			if err != nil {
 				return reconcile.Result{}, err

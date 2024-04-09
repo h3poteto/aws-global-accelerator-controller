@@ -3,8 +3,8 @@ package aws
 import (
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/globalaccelerator"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -15,15 +15,15 @@ import (
 func TestListenerProtocolChange(t *testing.T) {
 	cases := []struct {
 		title          string
-		listener       *globalaccelerator.Listener
+		listener       *gatypes.Listener
 		svc            *corev1.Service
 		expectedResult bool
 	}{
 		{
 			title: "Protocol is not changed, with single protocol",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				Protocol:    aws.String("UDP"),
+				Protocol:    gatypes.ProtocolUdp,
 			},
 			svc: &corev1.Service{
 				Spec: corev1.ServiceSpec{
@@ -39,9 +39,9 @@ func TestListenerProtocolChange(t *testing.T) {
 		},
 		{
 			title: "Protocol is not changed, with multiple protocol",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				Protocol:    aws.String("TCP"),
+				Protocol:    gatypes.ProtocolTcp,
 			},
 			svc: &corev1.Service{
 				Spec: corev1.ServiceSpec{
@@ -61,9 +61,9 @@ func TestListenerProtocolChange(t *testing.T) {
 		},
 		{
 			title: "Protocol not is changed, with multiple different protocol",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				Protocol:    aws.String("TCP"),
+				Protocol:    gatypes.ProtocolTcp,
 			},
 			svc: &corev1.Service{
 				Spec: corev1.ServiceSpec{
@@ -83,9 +83,9 @@ func TestListenerProtocolChange(t *testing.T) {
 		},
 		{
 			title: "Protocol is changed, with single protocol",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				Protocol:    aws.String("TCP"),
+				Protocol:    gatypes.ProtocolTcp,
 			},
 			svc: &corev1.Service{
 				Spec: corev1.ServiceSpec{
@@ -101,9 +101,9 @@ func TestListenerProtocolChange(t *testing.T) {
 		},
 		{
 			title: "Protocol is changed, with multiple protocol",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				Protocol:    aws.String("TCP"),
+				Protocol:    gatypes.ProtocolTcp,
 			},
 			svc: &corev1.Service{
 				Spec: corev1.ServiceSpec{
@@ -123,9 +123,9 @@ func TestListenerProtocolChange(t *testing.T) {
 		},
 		{
 			title: "Protocol is changed, with multiple different protocol",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				Protocol:    aws.String("TCP"),
+				Protocol:    gatypes.ProtocolTcp,
 			},
 			svc: &corev1.Service{
 				Spec: corev1.ServiceSpec{
@@ -157,18 +157,18 @@ func TestListenerProtocolChange(t *testing.T) {
 func TestListenerPortChanged(t *testing.T) {
 	cases := []struct {
 		title    string
-		listener *globalaccelerator.Listener
+		listener *gatypes.Listener
 		svc      *corev1.Service
 		expected bool
 	}{
 		{
 			title: "Single port is not changed",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				PortRanges: []*globalaccelerator.PortRange{
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(80),
-						ToPort:   aws.Int64(80),
+				PortRanges: []gatypes.PortRange{
+					gatypes.PortRange{
+						FromPort: aws.Int32(80),
+						ToPort:   aws.Int32(80),
 					},
 				},
 			},
@@ -185,20 +185,20 @@ func TestListenerPortChanged(t *testing.T) {
 		},
 		{
 			title: "Multiple ports are not changed",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				PortRanges: []*globalaccelerator.PortRange{
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(80),
-						ToPort:   aws.Int64(80),
+				PortRanges: []gatypes.PortRange{
+					gatypes.PortRange{
+						FromPort: aws.Int32(80),
+						ToPort:   aws.Int32(80),
 					},
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(443),
-						ToPort:   aws.Int64(443),
+					gatypes.PortRange{
+						FromPort: aws.Int32(443),
+						ToPort:   aws.Int32(443),
 					},
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(8080),
-						ToPort:   aws.Int64(8080),
+					gatypes.PortRange{
+						FromPort: aws.Int32(8080),
+						ToPort:   aws.Int32(8080),
 					},
 				},
 			},
@@ -221,12 +221,12 @@ func TestListenerPortChanged(t *testing.T) {
 		},
 		{
 			title: "Single port is changed",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				PortRanges: []*globalaccelerator.PortRange{
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(80),
-						ToPort:   aws.Int64(80),
+				PortRanges: []gatypes.PortRange{
+					gatypes.PortRange{
+						FromPort: aws.Int32(80),
+						ToPort:   aws.Int32(80),
 					},
 				},
 			},
@@ -243,16 +243,16 @@ func TestListenerPortChanged(t *testing.T) {
 		},
 		{
 			title: "Multiple ports are changed",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				PortRanges: []*globalaccelerator.PortRange{
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(80),
-						ToPort:   aws.Int64(80),
+				PortRanges: []gatypes.PortRange{
+					gatypes.PortRange{
+						FromPort: aws.Int32(80),
+						ToPort:   aws.Int32(80),
 					},
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(8080),
-						ToPort:   aws.Int64(8080),
+					gatypes.PortRange{
+						FromPort: aws.Int32(8080),
+						ToPort:   aws.Int32(8080),
 					},
 				},
 			},
@@ -272,16 +272,16 @@ func TestListenerPortChanged(t *testing.T) {
 		},
 		{
 			title: "Ports are increased",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				PortRanges: []*globalaccelerator.PortRange{
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(80),
-						ToPort:   aws.Int64(80),
+				PortRanges: []gatypes.PortRange{
+					gatypes.PortRange{
+						FromPort: aws.Int32(80),
+						ToPort:   aws.Int32(80),
 					},
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(8080),
-						ToPort:   aws.Int64(8080),
+					gatypes.PortRange{
+						FromPort: aws.Int32(8080),
+						ToPort:   aws.Int32(8080),
 					},
 				},
 			},
@@ -304,20 +304,20 @@ func TestListenerPortChanged(t *testing.T) {
 		},
 		{
 			title: "Ports are decreased",
-			listener: &globalaccelerator.Listener{
+			listener: &gatypes.Listener{
 				ListenerArn: aws.String("sample"),
-				PortRanges: []*globalaccelerator.PortRange{
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(80),
-						ToPort:   aws.Int64(80),
+				PortRanges: []gatypes.PortRange{
+					gatypes.PortRange{
+						FromPort: aws.Int32(80),
+						ToPort:   aws.Int32(80),
 					},
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(443),
-						ToPort:   aws.Int64(443),
+					gatypes.PortRange{
+						FromPort: aws.Int32(443),
+						ToPort:   aws.Int32(443),
 					},
-					&globalaccelerator.PortRange{
-						FromPort: aws.Int64(8080),
-						ToPort:   aws.Int64(8080),
+					gatypes.PortRange{
+						FromPort: aws.Int32(8080),
+						ToPort:   aws.Int32(8080),
 					},
 				},
 			},
@@ -348,8 +348,8 @@ func TestListenerForIngress(t *testing.T) {
 	cases := []struct {
 		title            string
 		ingress          *networkingv1.Ingress
-		expectedPorts    []int64
-		expectedProtocol string
+		expectedPorts    []int32
+		expectedProtocol gatypes.Protocol
 	}{
 		{
 			title: "Only spec rules",
@@ -384,8 +384,8 @@ func TestListenerForIngress(t *testing.T) {
 					},
 				},
 			},
-			expectedPorts:    []int64{80},
-			expectedProtocol: "TCP",
+			expectedPorts:    []int32{80},
+			expectedProtocol: gatypes.ProtocolTcp,
 		},
 		{
 			title: "DefaultBackend is specified",
@@ -428,8 +428,8 @@ func TestListenerForIngress(t *testing.T) {
 					},
 				},
 			},
-			expectedPorts:    []int64{8080, 80},
-			expectedProtocol: "TCP",
+			expectedPorts:    []int32{8080, 80},
+			expectedProtocol: gatypes.ProtocolTcp,
 		},
 		{
 			title: "ListenPorts annotation is specified",
@@ -474,8 +474,8 @@ func TestListenerForIngress(t *testing.T) {
 					},
 				},
 			},
-			expectedPorts:    []int64{80, 443},
-			expectedProtocol: "TCP",
+			expectedPorts:    []int32{80, 443},
+			expectedProtocol: gatypes.ProtocolTcp,
 		},
 	}
 

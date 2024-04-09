@@ -6,23 +6,23 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/elbv2"
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 )
 
-func (a *AWS) GetLoadBalancer(ctx context.Context, name string) (*elbv2.LoadBalancer, error) {
+func (a *AWS) GetLoadBalancer(ctx context.Context, name string) (*elbv2types.LoadBalancer, error) {
 	input := &elbv2.DescribeLoadBalancersInput{
-		Names: []*string{
-			aws.String(name),
+		Names: []string{
+			name,
 		},
 	}
-	res, err := a.lb.DescribeLoadBalancersWithContext(ctx, input)
+	res, err := a.lb.DescribeLoadBalancers(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 	for _, lb := range res.LoadBalancers {
 		if *lb.LoadBalancerName == name {
-			return lb, nil
+			return &lb, nil
 		}
 	}
 

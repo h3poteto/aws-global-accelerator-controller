@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/elbv2"
-	"github.com/aws/aws-sdk-go/service/globalaccelerator"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/aws/aws-sdk-go-v2/service/globalaccelerator"
+	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/apis"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -33,13 +35,13 @@ func acceleratorName(resource string, obj metav1.Object) string {
 	return resource + "-" + obj.GetNamespace() + "-" + obj.GetName()
 }
 
-func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, clusterName string) ([]*globalaccelerator.Accelerator, error) {
+func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, clusterName string) ([]*gatypes.Accelerator, error) {
 	accelerators, err := a.listAccelerator(ctx)
 	if err != nil {
 		klog.Error(err)
 		return nil, err
 	}
-	res := []*globalaccelerator.Accelerator{}
+	res := []*gatypes.Accelerator{}
 	for _, accelerator := range accelerators {
 		tags, err := a.listTagsForAccelerator(ctx, *accelerator.AcceleratorArn)
 		if err != nil {
@@ -58,13 +60,13 @@ func (a *AWS) ListGlobalAcceleratorByHostname(ctx context.Context, hostname, clu
 	return res, nil
 }
 
-func (a *AWS) ListGlobalAcceleratorByResource(ctx context.Context, clusterName, resource, ns, name string) ([]*globalaccelerator.Accelerator, error) {
+func (a *AWS) ListGlobalAcceleratorByResource(ctx context.Context, clusterName, resource, ns, name string) ([]*gatypes.Accelerator, error) {
 	accelerators, err := a.listAccelerator(ctx)
 	if err != nil {
 		klog.Error(err)
 		return nil, err
 	}
-	res := []*globalaccelerator.Accelerator{}
+	res := []*gatypes.Accelerator{}
 	for _, accelerator := range accelerators {
 		tags, err := a.listTagsForAccelerator(ctx, *accelerator.AcceleratorArn)
 		if err != nil {
@@ -96,8 +98,8 @@ func (a *AWS) EnsureGlobalAcceleratorForService(
 	if *lb.DNSName != lbIngress.Hostname {
 		return nil, false, 0, fmt.Errorf("LoadBalancer's DNS name is not matched: %s", *lb.DNSName)
 	}
-	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
-		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
+	if lb.State.Code != elbv2types.LoadBalancerStateEnumActive {
+		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, lb.State.Code)
 		return nil, false, 30 * time.Second, nil
 	}
 
@@ -147,8 +149,8 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 		klog.Error(err)
 		return nil, false, 0, err
 	}
-	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
-		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
+	if lb.State.Code != elbv2types.LoadBalancerStateEnumActive {
+		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, lb.State.Code)
 		return nil, false, 30 * time.Second, nil
 	}
 
@@ -184,7 +186,7 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 	return accelerators[0].AcceleratorArn, false, 0, nil
 }
 
-func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2.LoadBalancer, svc *corev1.Service, clusterName, region string) (*string, error) {
+func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2types.LoadBalancer, svc *corev1.Service, clusterName, region string) (*string, error) {
 	accelerator, err := a.createAccelerator(ctx, acceleratorName("service", svc), clusterName, acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName)
 	if err != nil {
 		return nil, err
@@ -204,7 +206,7 @@ func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2.L
 	return accelerator.AcceleratorArn, nil
 }
 
-func (a *AWS) createGlobalAcceleratorForIngress(ctx context.Context, lb *elbv2.LoadBalancer, ingress *networkingv1.Ingress, clusterName, region string) (*string, error) {
+func (a *AWS) createGlobalAcceleratorForIngress(ctx context.Context, lb *elbv2types.LoadBalancer, ingress *networkingv1.Ingress, clusterName, region string) (*string, error) {
 	accelerator, err := a.createAccelerator(ctx, acceleratorName("ingress", ingress), clusterName, acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName)
 	if err != nil {
 		return nil, err
@@ -243,7 +245,7 @@ func (a *AWS) CleanupGlobalAccelerator(ctx context.Context, arn string) error {
 	return nil
 }
 
-func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*globalaccelerator.Accelerator, *globalaccelerator.Listener, *globalaccelerator.EndpointGroup) {
+func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*gatypes.Accelerator, *gatypes.Listener, *gatypes.EndpointGroup) {
 	accelerator, err := a.getAccelerator(ctx, arn)
 	if err != nil {
 		return nil, nil, nil
@@ -259,7 +261,7 @@ func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*gl
 	return accelerator, listener, endpoint
 }
 
-func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator *globalaccelerator.Accelerator, lb *elbv2.LoadBalancer, svc *corev1.Service, region string) error {
+func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator *gatypes.Accelerator, lb *elbv2types.LoadBalancer, svc *corev1.Service, region string) error {
 	if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "service", svc) {
 		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("service", svc), acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName); err != nil {
 			klog.Error(err)
@@ -269,7 +271,7 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 
 	listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
 	if err != nil {
-		var notFoundErr *globalaccelerator.ListenerNotFoundException
+		var notFoundErr *gatypes.ListenerNotFoundException
 		if errors.As(err, &notFoundErr) {
 			ports, protocol := listenerForService(svc)
 			listener, err = a.createListener(ctx, accelerator, ports, protocol)
@@ -293,7 +295,7 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 	}
 	endpoint, err := a.GetEndpointGroup(ctx, *listener.ListenerArn)
 	if err != nil {
-		var notFoundErr *globalaccelerator.EndpointGroupNotFoundException
+		var notFoundErr *gatypes.EndpointGroupNotFoundException
 		if errors.As(err, &notFoundErr) {
 			ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
 			endpoint, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve)
@@ -320,7 +322,7 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 	return nil
 }
 
-func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator *globalaccelerator.Accelerator, lb *elbv2.LoadBalancer, ingress *networkingv1.Ingress, region string) error {
+func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator *gatypes.Accelerator, lb *elbv2types.LoadBalancer, ingress *networkingv1.Ingress, region string) error {
 	if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "ingress", ingress) {
 		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("ingress", ingress), acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName); err != nil {
 			klog.Error(err)
@@ -330,7 +332,7 @@ func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator
 
 	listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
 	if err != nil {
-		var notFoundErr *globalaccelerator.ListenerNotFoundException
+		var notFoundErr *gatypes.ListenerNotFoundException
 		if errors.As(err, &notFoundErr) {
 			ports, protocol := listenerForIngress(ingress)
 			listener, err = a.createListener(ctx, accelerator, ports, protocol)
@@ -354,7 +356,7 @@ func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator
 	}
 	endpoint, err := a.GetEndpointGroup(ctx, *listener.ListenerArn)
 	if err != nil {
-		var notFoundErr *globalaccelerator.EndpointGroupNotFoundException
+		var notFoundErr *gatypes.EndpointGroupNotFoundException
 		if errors.As(err, &notFoundErr) {
 			ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
 			endpoint, err = a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve)
@@ -381,7 +383,7 @@ func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator
 	return nil
 }
 
-func (a *AWS) acceleratorChanged(ctx context.Context, accelerator *globalaccelerator.Accelerator, hostname, resource string, obj metav1.Object) bool {
+func (a *AWS) acceleratorChanged(ctx context.Context, accelerator *gatypes.Accelerator, hostname, resource string, obj metav1.Object) bool {
 	if *accelerator.Enabled == false {
 		return true
 	}
@@ -405,24 +407,26 @@ func (a *AWS) acceleratorChanged(ctx context.Context, accelerator *globalacceler
 
 }
 
-func listenerProtocolChangedFromService(listener *globalaccelerator.Listener, svc *corev1.Service) bool {
-	protocol := "TCP"
+func listenerProtocolChangedFromService(listener *gatypes.Listener, svc *corev1.Service) bool {
+	protocol := gatypes.ProtocolTcp
 	for _, p := range svc.Spec.Ports {
-		if p.Protocol != "" {
-			protocol = string(p.Protocol)
+		if strings.ToLower(string(p.Protocol)) == "udp" {
+			protocol = gatypes.ProtocolUdp
+		} else if strings.ToLower(string(p.Protocol)) == "tcp" {
+			protocol = gatypes.ProtocolTcp
 		}
 	}
-	return *listener.Protocol != protocol
 
+	return listener.Protocol != protocol
 }
 
-func listenerProtocolChangedFromIngress(listener *globalaccelerator.Listener, ingress *networkingv1.Ingress) bool {
+func listenerProtocolChangedFromIngress(listener *gatypes.Listener, ingress *networkingv1.Ingress) bool {
 	// Ingress(= ALB) allows only HTTP or TCP, it does not allow UDP.
 	// And Global Accelerator Listener is TCP or UDP. So if the listener protocol is not TCP, it is not allowed.
-	return *listener.Protocol != "TCP"
+	return listener.Protocol != gatypes.ProtocolTcp
 }
 
-func listenerPortChangedFromService(listener *globalaccelerator.Listener, svc *corev1.Service) bool {
+func listenerPortChangedFromService(listener *gatypes.Listener, svc *corev1.Service) bool {
 	portCount := make(map[int]int)
 	for _, p := range listener.PortRanges {
 		portCount[int(*p.FromPort)]++
@@ -440,7 +444,7 @@ func listenerPortChangedFromService(listener *globalaccelerator.Listener, svc *c
 	return false
 }
 
-func listenerPortChangedFromIngress(listener *globalaccelerator.Listener, ingress *networkingv1.Ingress) bool {
+func listenerPortChangedFromIngress(listener *gatypes.Listener, ingress *networkingv1.Ingress) bool {
 	portCount := make(map[int]int)
 	for _, p := range listener.PortRanges {
 		portCount[int(*p.FromPort)]++
@@ -458,7 +462,7 @@ func listenerPortChangedFromIngress(listener *globalaccelerator.Listener, ingres
 
 }
 
-func endpointContainsLB(endpoint *globalaccelerator.EndpointGroup, lb *elbv2.LoadBalancer) bool {
+func endpointContainsLB(endpoint *gatypes.EndpointGroup, lb *elbv2types.LoadBalancer) bool {
 	for _, d := range endpoint.EndpointDescriptions {
 		if *d.EndpointId == *lb.LoadBalancerArn {
 			return true
@@ -467,13 +471,15 @@ func endpointContainsLB(endpoint *globalaccelerator.EndpointGroup, lb *elbv2.Loa
 	return false
 }
 
-func listenerForService(svc *corev1.Service) ([]int64, string) {
-	ports := []int64{}
-	protocol := "TCP"
+func listenerForService(svc *corev1.Service) ([]int32, gatypes.Protocol) {
+	ports := []int32{}
+	protocol := gatypes.ProtocolTcp
 	for _, p := range svc.Spec.Ports {
-		ports = append(ports, int64(p.Port))
-		if p.Protocol != "" {
-			protocol = string(p.Protocol)
+		ports = append(ports, int32(p.Port))
+		if strings.ToLower(string(p.Protocol)) == "udp" {
+			protocol = gatypes.ProtocolUdp
+		} else if strings.ToLower(string(p.Protocol)) == "tcp" {
+			protocol = gatypes.ProtocolTcp
 		}
 	}
 	return ports, protocol
@@ -484,9 +490,9 @@ type IngressPort struct {
 	HTTPS int64 `json:"HTTPS,omitempty"`
 }
 
-func listenerForIngress(ingress *networkingv1.Ingress) ([]int64, string) {
-	ports := []int64{}
-	protocol := "TCP"
+func listenerForIngress(ingress *networkingv1.Ingress) ([]int32, gatypes.Protocol) {
+	ports := []int32{}
+	protocol := gatypes.ProtocolTcp
 	// If this annotation is specified, ALB listen these ports, we can ignore ports in rules.
 	if val, ok := ingress.Annotations["alb.ingress.kubernetes.io/listen-ports"]; ok {
 		ingressPorts := []IngressPort{}
@@ -497,23 +503,23 @@ func listenerForIngress(ingress *networkingv1.Ingress) ([]int64, string) {
 		}
 		for _, i := range ingressPorts {
 			if i.HTTP != 0 {
-				ports = append(ports, i.HTTP)
+				ports = append(ports, int32(i.HTTP))
 			}
 			if i.HTTPS != 0 {
-				ports = append(ports, i.HTTPS)
+				ports = append(ports, int32(i.HTTPS))
 			}
 		}
 		return ports, protocol
 	}
 
 	if ingress.Spec.DefaultBackend != nil && ingress.Spec.DefaultBackend.Service != nil {
-		ports = append(ports, int64(ingress.Spec.DefaultBackend.Service.Port.Number))
+		ports = append(ports, int32(ingress.Spec.DefaultBackend.Service.Port.Number))
 	}
 	for _, rule := range ingress.Spec.Rules {
 		if rule.HTTP != nil {
 			for _, path := range rule.HTTP.Paths {
 				if path.Backend.Service != nil {
-					ports = append(ports, int64(path.Backend.Service.Port.Number))
+					ports = append(ports, int32(path.Backend.Service.Port.Number))
 				}
 			}
 		}
@@ -521,7 +527,7 @@ func listenerForIngress(ingress *networkingv1.Ingress) ([]int64, string) {
 	return ports, protocol
 }
 
-func tagsContainsAllValues(tags []*globalaccelerator.Tag, targetTags map[string]string) bool {
+func tagsContainsAllValues(tags []gatypes.Tag, targetTags map[string]string) bool {
 	actual := map[string]string{}
 	for _, t := range tags {
 		actual[*t.Key] = *t.Value
@@ -534,15 +540,15 @@ func tagsContainsAllValues(tags []*globalaccelerator.Tag, targetTags map[string]
 	return true
 }
 
-func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *globalaccelerator.EndpointGroup, lbName string, ipPreserve bool) (*string, time.Duration, error) {
+func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.EndpointGroup, lbName string, ipPreserve bool) (*string, time.Duration, error) {
 	// Describe the LB
 	lb, err := a.GetLoadBalancer(ctx, lbName)
 	if err != nil {
 		klog.Error(err)
 		return nil, 0, err
 	}
-	if *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
-		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, *lb.State.Code)
+	if lb.State.Code != elbv2types.LoadBalancerStateEnumActive {
+		klog.Warningf("LoadBalancer %s is not Active: %s", *lb.LoadBalancerArn, lb.State.Code)
 		return nil, 30 * time.Second, nil
 	}
 
@@ -554,7 +560,7 @@ func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *globalacc
 	return endpointId, 0, nil
 }
 
-func (a *AWS) RemoveLBFromEdnpointGroup(ctx context.Context, endpointGroup *globalaccelerator.EndpointGroup, endpointId string) error {
+func (a *AWS) RemoveLBFromEdnpointGroup(ctx context.Context, endpointGroup *gatypes.EndpointGroup, endpointId string) error {
 	err := a.removeEndpoint(ctx, *endpointGroup.EndpointGroupArn, endpointId)
 	if err != nil {
 		klog.Error(err)
@@ -566,69 +572,73 @@ func (a *AWS) RemoveLBFromEdnpointGroup(ctx context.Context, endpointGroup *glob
 // ---------------------------------
 // Accelerator methods
 // ---------------------------------
-func (a *AWS) getAccelerator(ctx context.Context, arn string) (*globalaccelerator.Accelerator, error) {
+func (a *AWS) getAccelerator(ctx context.Context, arn string) (*gatypes.Accelerator, error) {
 	input := &globalaccelerator.DescribeAcceleratorInput{
 		AcceleratorArn: aws.String(arn),
 	}
-	res, err := a.ga.DescribeAcceleratorWithContext(ctx, input)
+	res, err := a.ga.DescribeAccelerator(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 	return res.Accelerator, nil
 }
 
-func (a *AWS) listAccelerator(ctx context.Context) ([]*globalaccelerator.Accelerator, error) {
+func (a *AWS) listAccelerator(ctx context.Context) ([]*gatypes.Accelerator, error) {
 	input := &globalaccelerator.ListAcceleratorsInput{
-		MaxResults: aws.Int64(100),
+		MaxResults: aws.Int32(100),
 	}
-	accelerators := []*globalaccelerator.Accelerator{}
-	err := a.ga.ListAcceleratorsPagesWithContext(ctx, input, func(page *globalaccelerator.ListAcceleratorsOutput, lastPage bool) bool {
-		accelerators = append(accelerators, page.Accelerators...)
-		return true
-	})
-	if err != nil {
-		return nil, err
+	accelerators := []*gatypes.Accelerator{}
+	paginator := globalaccelerator.NewListAcceleratorsPaginator(a.ga, input)
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, accelerator := range output.Accelerators {
+			accelerators = append(accelerators, &accelerator)
+		}
 	}
+
 	return accelerators, nil
 }
 
-func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]*globalaccelerator.Tag, error) {
+func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]gatypes.Tag, error) {
 	input := &globalaccelerator.ListTagsForResourceInput{
 		ResourceArn: aws.String(arn),
 	}
-	res, err := a.ga.ListTagsForResourceWithContext(ctx, input)
+	res, err := a.ga.ListTagsForResource(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 	return res.Tags, nil
 }
 
-func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, hostname string) (*globalaccelerator.Accelerator, error) {
+func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, hostname string) (*gatypes.Accelerator, error) {
 	klog.Infof("Creating Global Accelerator %s", name)
 	acceleratorInput := &globalaccelerator.CreateAcceleratorInput{
 		Enabled:       aws.Bool(true),
-		IpAddressType: aws.String("IPV4"),
+		IpAddressType: gatypes.IpAddressTypeIpv4,
 		Name:          aws.String(name),
-		Tags: []*globalaccelerator.Tag{
-			&globalaccelerator.Tag{
+		Tags: []gatypes.Tag{
+			gatypes.Tag{
 				Key:   aws.String(globalAcceleratorManagedTagKey),
 				Value: aws.String("true"),
 			},
-			&globalaccelerator.Tag{
+			gatypes.Tag{
 				Key:   aws.String(globalAcceleratorOwnerTagKey),
 				Value: aws.String(owner),
 			},
-			&globalaccelerator.Tag{
+			gatypes.Tag{
 				Key:   aws.String(globalAcceleratorTargetHostnameKey),
 				Value: aws.String(hostname),
 			},
-			&globalaccelerator.Tag{
+			gatypes.Tag{
 				Key:   aws.String(globalAcceleratorClusterTagKey),
 				Value: aws.String(clusterName),
 			},
 		},
 	}
-	acceleratorRes, err := a.ga.CreateAcceleratorWithContext(ctx, acceleratorInput)
+	acceleratorRes, err := a.ga.CreateAccelerator(ctx, acceleratorInput)
 	if err != nil {
 		return nil, err
 	}
@@ -636,36 +646,36 @@ func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, h
 	return acceleratorRes.Accelerator, nil
 }
 
-func (a *AWS) updateAccelerator(ctx context.Context, arn *string, name, owner, hostname string) (*globalaccelerator.Accelerator, error) {
+func (a *AWS) updateAccelerator(ctx context.Context, arn *string, name, owner, hostname string) (*gatypes.Accelerator, error) {
 	klog.Infof("Updating Global Accelerator %s", *arn)
 	updateInput := &globalaccelerator.UpdateAcceleratorInput{
 		AcceleratorArn: arn,
 		Enabled:        aws.Bool(true),
 		Name:           aws.String(name),
 	}
-	updated, err := a.ga.UpdateAcceleratorWithContext(ctx, updateInput)
+	updated, err := a.ga.UpdateAccelerator(ctx, updateInput)
 	if err != nil {
 		klog.Error(err)
 		return nil, err
 	}
 	tagInput := &globalaccelerator.TagResourceInput{
 		ResourceArn: arn,
-		Tags: []*globalaccelerator.Tag{
-			&globalaccelerator.Tag{
+		Tags: []gatypes.Tag{
+			gatypes.Tag{
 				Key:   aws.String(globalAcceleratorManagedTagKey),
 				Value: aws.String("true"),
 			},
-			&globalaccelerator.Tag{
+			gatypes.Tag{
 				Key:   aws.String(globalAcceleratorOwnerTagKey),
 				Value: aws.String(owner),
 			},
-			&globalaccelerator.Tag{
+			gatypes.Tag{
 				Key:   aws.String(globalAcceleratorTargetHostnameKey),
 				Value: aws.String(hostname),
 			},
 		},
 	}
-	_, err = a.ga.TagResourceWithContext(ctx, tagInput)
+	_, err = a.ga.TagResource(ctx, tagInput)
 	if err != nil {
 		klog.Error(err)
 		return nil, err
@@ -680,7 +690,7 @@ func (a *AWS) deleteAccelerator(ctx context.Context, arn string) error {
 		AcceleratorArn: aws.String(arn),
 		Enabled:        aws.Bool(false),
 	}
-	_, err := a.ga.UpdateAcceleratorWithContext(ctx, updateInput)
+	_, err := a.ga.UpdateAccelerator(ctx, updateInput)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -693,11 +703,11 @@ func (a *AWS) deleteAccelerator(ctx context.Context, arn string) error {
 			return false, err
 		}
 
-		if *accelerator.Status == globalaccelerator.AcceleratorStatusDeployed {
-			klog.Infof("Global Accelerator %s is %s", *accelerator.AcceleratorArn, *accelerator.Status)
+		if accelerator.Status == gatypes.AcceleratorStatusDeployed {
+			klog.Infof("Global Accelerator %s is %s", *accelerator.AcceleratorArn, accelerator.Status)
 			return true, nil
 		}
-		klog.Infof("Global Accelerator %s is %s, so waiting", *accelerator.AcceleratorArn, *accelerator.Status)
+		klog.Infof("Global Accelerator %s is %s, so waiting", *accelerator.AcceleratorArn, accelerator.Status)
 		return false, nil
 	})
 	if err != nil {
@@ -708,7 +718,7 @@ func (a *AWS) deleteAccelerator(ctx context.Context, arn string) error {
 	input := &globalaccelerator.DeleteAcceleratorInput{
 		AcceleratorArn: aws.String(arn),
 	}
-	_, err = a.ga.DeleteAcceleratorWithContext(ctx, input)
+	_, err = a.ga.DeleteAccelerator(ctx, input)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -720,21 +730,25 @@ func (a *AWS) deleteAccelerator(ctx context.Context, arn string) error {
 // ---------------------------------
 // Lstener methods
 // ---------------------------------
-func (a *AWS) GetListener(ctx context.Context, acceleratorArn string) (*globalaccelerator.Listener, error) {
+func (a *AWS) GetListener(ctx context.Context, acceleratorArn string) (*gatypes.Listener, error) {
 	input := &globalaccelerator.ListListenersInput{
 		AcceleratorArn: aws.String(acceleratorArn),
-		MaxResults:     aws.Int64(100),
+		MaxResults:     aws.Int32(100),
 	}
-	listeners := []*globalaccelerator.Listener{}
-	err := a.ga.ListListenersPagesWithContext(ctx, input, func(page *globalaccelerator.ListListenersOutput, lastPage bool) bool {
-		listeners = append(listeners, page.Listeners...)
-		return true
-	})
-	if err != nil {
-		return nil, err
+	listeners := []*gatypes.Listener{}
+	paginator := globalaccelerator.NewListListenersPaginator(a.ga, input)
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, listener := range output.Listeners {
+			listeners = append(listeners, &listener)
+		}
 	}
+
 	if len(listeners) <= 0 {
-		return nil, &globalaccelerator.ListenerNotFoundException{}
+		return nil, &gatypes.ListenerNotFoundException{}
 	} else if len(listeners) > 1 {
 		klog.V(4).Infof("Too many listeners: %+v", listeners)
 		return nil, errors.New("Too many listeners")
@@ -742,21 +756,21 @@ func (a *AWS) GetListener(ctx context.Context, acceleratorArn string) (*globalac
 	return listeners[0], nil
 }
 
-func (a *AWS) createListener(ctx context.Context, accelerator *globalaccelerator.Accelerator, ports []int64, protocol string) (*globalaccelerator.Listener, error) {
-	var portRange []*globalaccelerator.PortRange
+func (a *AWS) createListener(ctx context.Context, accelerator *gatypes.Accelerator, ports []int32, protocol gatypes.Protocol) (*gatypes.Listener, error) {
+	var portRange []gatypes.PortRange
 	for _, p := range ports {
-		portRange = append(portRange, &globalaccelerator.PortRange{
-			FromPort: aws.Int64(p),
-			ToPort:   aws.Int64(p),
+		portRange = append(portRange, gatypes.PortRange{
+			FromPort: aws.Int32(p),
+			ToPort:   aws.Int32(p),
 		})
 	}
 	listenerInput := &globalaccelerator.CreateListenerInput{
 		AcceleratorArn: accelerator.AcceleratorArn,
-		ClientAffinity: aws.String("NONE"),
+		ClientAffinity: gatypes.ClientAffinityNone,
 		PortRanges:     portRange,
-		Protocol:       aws.String(protocol),
+		Protocol:       protocol,
 	}
-	listenerRes, err := a.ga.CreateListenerWithContext(ctx, listenerInput)
+	listenerRes, err := a.ga.CreateListener(ctx, listenerInput)
 	if err != nil {
 		return nil, err
 	}
@@ -764,21 +778,21 @@ func (a *AWS) createListener(ctx context.Context, accelerator *globalaccelerator
 	return listenerRes.Listener, nil
 }
 
-func (a *AWS) updateListener(ctx context.Context, listener *globalaccelerator.Listener, ports []int64, protocol string) (*globalaccelerator.Listener, error) {
-	var portRange []*globalaccelerator.PortRange
+func (a *AWS) updateListener(ctx context.Context, listener *gatypes.Listener, ports []int32, protocol gatypes.Protocol) (*gatypes.Listener, error) {
+	var portRange []gatypes.PortRange
 	for _, p := range ports {
-		portRange = append(portRange, &globalaccelerator.PortRange{
-			FromPort: aws.Int64(p),
-			ToPort:   aws.Int64(p),
+		portRange = append(portRange, gatypes.PortRange{
+			FromPort: aws.Int32(p),
+			ToPort:   aws.Int32(p),
 		})
 	}
 	input := &globalaccelerator.UpdateListenerInput{
-		ClientAffinity: aws.String("NONE"),
+		ClientAffinity: gatypes.ClientAffinityNone,
 		ListenerArn:    listener.ListenerArn,
 		PortRanges:     portRange,
-		Protocol:       aws.String(protocol),
+		Protocol:       protocol,
 	}
-	res, err := a.ga.UpdateListenerWithContext(ctx, input)
+	res, err := a.ga.UpdateListener(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -790,7 +804,7 @@ func (a *AWS) deleteListener(ctx context.Context, arn string) error {
 	input := &globalaccelerator.DeleteListenerInput{
 		ListenerArn: aws.String(arn),
 	}
-	_, err := a.ga.DeleteListenerWithContext(ctx, input)
+	_, err := a.ga.DeleteListener(ctx, input)
 	if err != nil {
 		return err
 	}
@@ -801,50 +815,52 @@ func (a *AWS) deleteListener(ctx context.Context, arn string) error {
 // ---------------------------------
 // EndpointGroup methods
 // ---------------------------------
-func (a *AWS) DescribeEndpointGroup(ctx context.Context, endpointGroupArn string) (*globalaccelerator.EndpointGroup, error) {
+func (a *AWS) DescribeEndpointGroup(ctx context.Context, endpointGroupArn string) (*gatypes.EndpointGroup, error) {
 	input := &globalaccelerator.DescribeEndpointGroupInput{
 		EndpointGroupArn: aws.String(endpointGroupArn),
 	}
-	res, err := a.ga.DescribeEndpointGroupWithContext(ctx, input)
+	res, err := a.ga.DescribeEndpointGroup(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 	return res.EndpointGroup, nil
 }
 
-func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*globalaccelerator.EndpointGroup, error) {
+func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*gatypes.EndpointGroup, error) {
 	input := &globalaccelerator.ListEndpointGroupsInput{
 		ListenerArn: aws.String(listenerArn),
-		MaxResults:  aws.Int64(100),
+		MaxResults:  aws.Int32(100),
 	}
-	endpointGroups := []*globalaccelerator.EndpointGroup{}
-	err := a.ga.ListEndpointGroupsPagesWithContext(ctx, input, func(page *globalaccelerator.ListEndpointGroupsOutput, lastPage bool) bool {
-		endpointGroups = append(endpointGroups, page.EndpointGroups...)
-		return true
-	})
-	if err != nil {
-		return nil, err
+	endpointGroups := []gatypes.EndpointGroup{}
+	paginator := globalaccelerator.NewListEndpointGroupsPaginator(a.ga, input)
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		endpointGroups = append(endpointGroups, output.EndpointGroups...)
 	}
+
 	if len(endpointGroups) <= 0 {
-		return nil, &globalaccelerator.EndpointGroupNotFoundException{}
+		return nil, &gatypes.EndpointGroupNotFoundException{}
 	} else if len(endpointGroups) > 1 {
 		klog.V(4).Infof("Too many endpoint groups: %+v", endpointGroups)
 		return nil, errors.New("Too many endpoint groups")
 	}
-	return endpointGroups[0], nil
+	return &endpointGroups[0], nil
 }
 
 func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, ipPreserve bool) (*string, error) {
 	input := &globalaccelerator.AddEndpointsInput{
-		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{
-			&globalaccelerator.EndpointConfiguration{
+		EndpointConfigurations: []gatypes.EndpointConfiguration{
+			gatypes.EndpointConfiguration{
 				EndpointId:                  aws.String(lbArn),
 				ClientIPPreservationEnabled: aws.Bool(ipPreserve),
 			},
 		},
 		EndpointGroupArn: aws.String(endpointGroupArn),
 	}
-	res, err := a.ga.AddEndpointsWithContext(ctx, input)
+	res, err := a.ga.AddEndpoints(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -858,13 +874,13 @@ func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, i
 func (a *AWS) removeEndpoint(ctx context.Context, endpointGroupArn, endpointId string) error {
 	input := &globalaccelerator.RemoveEndpointsInput{
 		EndpointGroupArn: aws.String(endpointGroupArn),
-		EndpointIdentifiers: []*globalaccelerator.EndpointIdentifier{
-			&globalaccelerator.EndpointIdentifier{
+		EndpointIdentifiers: []gatypes.EndpointIdentifier{
+			gatypes.EndpointIdentifier{
 				EndpointId: aws.String(endpointId),
 			},
 		},
 	}
-	_, err := a.ga.RemoveEndpointsWithContext(ctx, input)
+	_, err := a.ga.RemoveEndpoints(ctx, input)
 	if err != nil {
 		return err
 	}
@@ -872,10 +888,10 @@ func (a *AWS) removeEndpoint(ctx context.Context, endpointGroupArn, endpointId s
 	return nil
 }
 
-func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerator.Listener, lbArn *string, region string, ipPreserve bool) (*globalaccelerator.EndpointGroup, error) {
+func (a *AWS) createEndpointGroup(ctx context.Context, listener *gatypes.Listener, lbArn *string, region string, ipPreserve bool) (*gatypes.EndpointGroup, error) {
 	endpointInput := &globalaccelerator.CreateEndpointGroupInput{
-		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{
-			&globalaccelerator.EndpointConfiguration{
+		EndpointConfigurations: []gatypes.EndpointConfiguration{
+			gatypes.EndpointConfiguration{
 				EndpointId:                  lbArn,
 				ClientIPPreservationEnabled: &ipPreserve,
 			},
@@ -883,7 +899,7 @@ func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerat
 		EndpointGroupRegion: aws.String(region),
 		ListenerArn:         listener.ListenerArn,
 	}
-	endpointRes, err := a.ga.CreateEndpointGroupWithContext(ctx, endpointInput)
+	endpointRes, err := a.ga.CreateEndpointGroup(ctx, endpointInput)
 	if err != nil {
 		return nil, err
 	}
@@ -891,17 +907,17 @@ func (a *AWS) createEndpointGroup(ctx context.Context, listener *globalaccelerat
 	return endpointRes.EndpointGroup, nil
 }
 
-func (a *AWS) updateEndpointGroup(ctx context.Context, endpoint *globalaccelerator.EndpointGroup, lbArn *string, ipPreserve bool) (*globalaccelerator.EndpointGroup, error) {
+func (a *AWS) updateEndpointGroup(ctx context.Context, endpoint *gatypes.EndpointGroup, lbArn *string, ipPreserve bool) (*gatypes.EndpointGroup, error) {
 	input := &globalaccelerator.UpdateEndpointGroupInput{
-		EndpointConfigurations: []*globalaccelerator.EndpointConfiguration{
-			&globalaccelerator.EndpointConfiguration{
+		EndpointConfigurations: []gatypes.EndpointConfiguration{
+			gatypes.EndpointConfiguration{
 				EndpointId:                  lbArn,
 				ClientIPPreservationEnabled: &ipPreserve,
 			},
 		},
 		EndpointGroupArn: endpoint.EndpointGroupArn,
 	}
-	res, err := a.ga.UpdateEndpointGroupWithContext(ctx, input)
+	res, err := a.ga.UpdateEndpointGroup(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -913,7 +929,7 @@ func (a *AWS) deleteEndpointGroup(ctx context.Context, arn string) error {
 	input := &globalaccelerator.DeleteEndpointGroupInput{
 		EndpointGroupArn: aws.String(arn),
 	}
-	_, err := a.ga.DeleteEndpointGroupWithContext(ctx, input)
+	_, err := a.ga.DeleteEndpointGroup(ctx, input)
 	if err != nil {
 		return err
 	}
