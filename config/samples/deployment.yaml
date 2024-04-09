@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: h3poteto
+  namespace: default
   labels:
     app: h3poteto
 spec:
