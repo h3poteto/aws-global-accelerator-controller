@@ -5,7 +5,7 @@
 ![GitHub](https://img.shields.io/github/license/h3poteto/aws-global-accelerator-controller)
 
 # AWS Global Accelerator Controller
-AWS Global Accelerator Controller is a controller to manage Global Accelerator for a Kubenretes cluster. The features are
+AWS Global Accelerator Controller is a controller to manage Global Accelerator for a Kubernetes cluster. The features are
 
 - Create Global Accelerator for the Network Load Balancer which is created by Service `type: LoadBalancer`.
 - Create Global Accelerator for the Application Load Balancer which is created by [aws-load-balancer-controller](https://github.com/kubernetes-sigs/aws-load-balancer-controller/).
@@ -120,7 +120,7 @@ spec:
 ```
 
 ## Create route53 records associated with the Global Accelerator
-Please add an annotation `aws-global-accelerator-controller.h3poteto.dev/route53-hostname` in addition to `global-ccelerator-managed` annotation. And specify your hostname to the annotation.
+Please add an annotation `aws-global-accelerator-controller.h3poteto.dev/route53-hostname` in addition to `global-accelerator-managed` annotation. And specify your hostname to the annotation.
 
 ```yaml
 apiVersion: v1
@@ -178,7 +178,7 @@ spec:
 ```
 
 ## EndpointGroupBinding
-EndpointGroupBinding is a custom resourse that can connect your service (Load Balancer) to an existing Global Accelerator Endpoint Group. This will allow you to manage Global Accelerator outside of Kubernetes, and you can bind multiple services (Load Balancers) to an Global Accelerator Endpoint Group.
+EndpointGroupBinding is a custom resource that can connect your service (Load Balancer) to an existing Global Accelerator Endpoint Group. This will allow you to manage Global Accelerator outside of Kubernetes, and you can bind multiple services (Load Balancers) to an Global Accelerator Endpoint Group.
 
 
 At first, please create a service with Load Balancer.
