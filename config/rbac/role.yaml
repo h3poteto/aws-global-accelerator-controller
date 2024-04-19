@@ -60,7 +60,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - operator.aws.h3poteto.dev
+  - operator.h3poteto.dev
   resources:
   - endpointgroupbindings
   verbs:
@@ -72,7 +72,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.aws.h3poteto.dev
+  - operator.h3poteto.dev
   resources:
   - endpointgroupbindings/status
   verbs:
