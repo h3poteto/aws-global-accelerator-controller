@@ -594,8 +594,8 @@ func (a *AWS) listAccelerator(ctx context.Context) ([]*gatypes.Accelerator, erro
 		if err != nil {
 			return nil, err
 		}
-		for _, accelerator := range output.Accelerators {
-			accelerators = append(accelerators, &accelerator)
+		for i := range output.Accelerators {
+			accelerators = append(accelerators, &output.Accelerators[i])
 		}
 	}
 
