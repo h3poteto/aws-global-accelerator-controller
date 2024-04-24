@@ -48,8 +48,8 @@ type EndpointGroupBindingController struct {
 	recorder  record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=operator.aws.h3poteto.dev,resources=endpointgroupbindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=operator.aws.h3poteto.dev,resources=endpointgroupbindings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=operator.h3poteto.dev,resources=endpointgroupbindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=operator.h3poteto.dev,resources=endpointgroupbindings/status,verbs=get;update;patch
 
 func NewEndpointGroupBindingController(kubeclient kubernetes.Interface, ownclientset ownclientset.Interface, informerFactory informers.SharedInformerFactory, ownInformerFactory owninformers.SharedInformerFactory, config *EndpointGroupBindingConfig) *EndpointGroupBindingController {
 	eventBroadcaster := record.NewBroadcaster()
