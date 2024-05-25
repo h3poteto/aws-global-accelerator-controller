@@ -13,7 +13,11 @@ CODE_GENERATOR_TAG=v0.28.8
 CONTROLLER_TOOLS_TAG=v0.13.0
 BRANCH := $(shell git branch --show-current)
 
+TARGETOS ?= linux
+TARGETARCH ?= amd64
+
 build: codegen manifests
+	GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) CGO_ENABLED="0" \
 	go build -a -tags netgo -installsuffix netgo -ldflags \
 " \
   -extldflags '-static' \

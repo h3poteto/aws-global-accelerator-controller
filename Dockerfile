@@ -1,8 +1,7 @@
-FROM golang:1.21 as builder
+FROM --platform=$BUILDPLATFORM golang:1.21 as builder
 
-ENV CGO_ENABLED="0" \
-    GOOS="linux" \
-    GOARCH="amd64"
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /go/src/github.com/h3poteto/aws-global-accelerator-controller
 
@@ -12,6 +11,7 @@ RUN go mod download
 
 COPY . .
 RUN set -ex && \
+    TARGETOS="$TARGETOS" TARGETARCH="$TARGETARCH" \
     make build
 
 FROM gcr.io/distroless/static:nonroot
