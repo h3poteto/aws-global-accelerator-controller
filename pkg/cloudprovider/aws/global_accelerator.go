@@ -31,6 +31,24 @@ func acceleratorOwnerTagValue(resource, ns, name string) string {
 	return resource + "/" + ns + "/" + name
 }
 
+func acceleratorTags(obj metav1.Object) []gatypes.Tag {
+	results := []gatypes.Tag{}
+	specifiedTags := strings.Split(obj.GetAnnotations()[apis.AWSGlobalAcceleratorTagsAnnotation], ",")
+	for _, tag := range specifiedTags {
+		t := strings.Split(tag, "=")
+		if len(t) != 2 {
+			continue
+		}
+		v := gatypes.Tag{
+			Key:   aws.String(t[0]),
+			Value: aws.String(t[1]),
+		}
+		results = append(results, v)
+	}
+
+	return results
+}
+
 func acceleratorName(resource string, obj metav1.Object) string {
 	name := obj.GetAnnotations()[apis.AWSGlobalAcceleratorNameAnnotation]
 	if name != "" {
@@ -192,7 +210,7 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 }
 
 func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2types.LoadBalancer, svc *corev1.Service, clusterName, region string) (*string, error) {
-	accelerator, err := a.createAccelerator(ctx, acceleratorName("service", svc), clusterName, acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName)
+	accelerator, err := a.createAccelerator(ctx, acceleratorName("service", svc), clusterName, acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName, acceleratorTags(svc))
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +230,7 @@ func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2ty
 }
 
 func (a *AWS) createGlobalAcceleratorForIngress(ctx context.Context, lb *elbv2types.LoadBalancer, ingress *networkingv1.Ingress, clusterName, region string) (*string, error) {
-	accelerator, err := a.createAccelerator(ctx, acceleratorName("ingress", ingress), clusterName, acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName)
+	accelerator, err := a.createAccelerator(ctx, acceleratorName("ingress", ingress), clusterName, acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName, acceleratorTags(ingress))
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +286,7 @@ func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*ga
 
 func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator *gatypes.Accelerator, lb *elbv2types.LoadBalancer, svc *corev1.Service, region string) error {
 	if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "service", svc) {
-		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("service", svc), acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName); err != nil {
+		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("service", svc), acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName, acceleratorTags(svc)); err != nil {
 			klog.Error(err)
 			return err
 		}
@@ -329,7 +347,7 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 
 func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator *gatypes.Accelerator, lb *elbv2types.LoadBalancer, ingress *networkingv1.Ingress, region string) error {
 	if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "ingress", ingress) {
-		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("ingress", ingress), acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName); err != nil {
+		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("ingress", ingress), acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName, acceleratorTags(ingress)); err != nil {
 			klog.Error(err)
 			return err
 		}
@@ -618,30 +636,32 @@ func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]gatypes
 	return res.Tags, nil
 }
 
-func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, hostname string) (*gatypes.Accelerator, error) {
+func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, hostname string, specifiedTags []gatypes.Tag) (*gatypes.Accelerator, error) {
 	klog.Infof("Creating Global Accelerator %s", name)
+	tags := []gatypes.Tag{
+		gatypes.Tag{
+			Key:   aws.String(globalAcceleratorManagedTagKey),
+			Value: aws.String("true"),
+		},
+		gatypes.Tag{
+			Key:   aws.String(globalAcceleratorOwnerTagKey),
+			Value: aws.String(owner),
+		},
+		gatypes.Tag{
+			Key:   aws.String(globalAcceleratorTargetHostnameKey),
+			Value: aws.String(hostname),
+		},
+		gatypes.Tag{
+			Key:   aws.String(globalAcceleratorClusterTagKey),
+			Value: aws.String(clusterName),
+		},
+	}
+	tags = append(tags, specifiedTags...)
 	acceleratorInput := &globalaccelerator.CreateAcceleratorInput{
 		Enabled:       aws.Bool(true),
 		IpAddressType: gatypes.IpAddressTypeIpv4,
 		Name:          aws.String(name),
-		Tags: []gatypes.Tag{
-			gatypes.Tag{
-				Key:   aws.String(globalAcceleratorManagedTagKey),
-				Value: aws.String("true"),
-			},
-			gatypes.Tag{
-				Key:   aws.String(globalAcceleratorOwnerTagKey),
-				Value: aws.String(owner),
-			},
-			gatypes.Tag{
-				Key:   aws.String(globalAcceleratorTargetHostnameKey),
-				Value: aws.String(hostname),
-			},
-			gatypes.Tag{
-				Key:   aws.String(globalAcceleratorClusterTagKey),
-				Value: aws.String(clusterName),
-			},
-		},
+		Tags:          tags,
 	}
 	acceleratorRes, err := a.ga.CreateAccelerator(ctx, acceleratorInput)
 	if err != nil {
@@ -651,7 +671,7 @@ func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, h
 	return acceleratorRes.Accelerator, nil
 }
 
-func (a *AWS) updateAccelerator(ctx context.Context, arn *string, name, owner, hostname string) (*gatypes.Accelerator, error) {
+func (a *AWS) updateAccelerator(ctx context.Context, arn *string, name, owner, hostname string, specifiedTags []gatypes.Tag) (*gatypes.Accelerator, error) {
 	klog.Infof("Updating Global Accelerator %s", *arn)
 	updateInput := &globalaccelerator.UpdateAcceleratorInput{
 		AcceleratorArn: arn,
@@ -663,22 +683,24 @@ func (a *AWS) updateAccelerator(ctx context.Context, arn *string, name, owner, h
 		klog.Error(err)
 		return nil, err
 	}
+	tags := []gatypes.Tag{
+		gatypes.Tag{
+			Key:   aws.String(globalAcceleratorManagedTagKey),
+			Value: aws.String("true"),
+		},
+		gatypes.Tag{
+			Key:   aws.String(globalAcceleratorOwnerTagKey),
+			Value: aws.String(owner),
+		},
+		gatypes.Tag{
+			Key:   aws.String(globalAcceleratorTargetHostnameKey),
+			Value: aws.String(hostname),
+		},
+	}
+	tags = append(tags, specifiedTags...)
 	tagInput := &globalaccelerator.TagResourceInput{
 		ResourceArn: arn,
-		Tags: []gatypes.Tag{
-			gatypes.Tag{
-				Key:   aws.String(globalAcceleratorManagedTagKey),
-				Value: aws.String("true"),
-			},
-			gatypes.Tag{
-				Key:   aws.String(globalAcceleratorOwnerTagKey),
-				Value: aws.String(owner),
-			},
-			gatypes.Tag{
-				Key:   aws.String(globalAcceleratorTargetHostnameKey),
-				Value: aws.String(hostname),
-			},
-		},
+		Tags:        tags,
 	}
 	_, err = a.ga.TagResource(ctx, tagInput)
 	if err != nil {
