@@ -160,7 +160,7 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 	}
 
 	for _, endpointId := range newEndpointIds {
-		id, retry, err := regionalCloud.AddLBToEndpointGroup(ctx, endpoint, arns[endpointId], obj.Spec.ClientIPPreservation)
+		id, retry, err := regionalCloud.AddLBToEndpointGroup(ctx, endpoint, arns[endpointId], obj.Spec.ClientIPPreservation, obj.Spec.Weight)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err

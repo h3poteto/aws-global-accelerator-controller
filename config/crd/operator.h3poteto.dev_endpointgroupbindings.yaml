@@ -63,8 +63,8 @@ spec:
                 - name
                 type: object
               weight:
-                default: 0
-                format: int64
+                format: int32
+                nullable: true
                 type: integer
             required:
             - endpointGroupArn

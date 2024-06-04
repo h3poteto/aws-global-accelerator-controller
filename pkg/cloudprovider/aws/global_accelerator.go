@@ -563,7 +563,7 @@ func tagsContainsAllValues(tags []gatypes.Tag, targetTags map[string]string) boo
 	return true
 }
 
-func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.EndpointGroup, lbName string, ipPreserve bool) (*string, time.Duration, error) {
+func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.EndpointGroup, lbName string, ipPreserve bool, weight *int32) (*string, time.Duration, error) {
 	// Describe the LB
 	lb, err := a.GetLoadBalancer(ctx, lbName)
 	if err != nil {
@@ -575,7 +575,7 @@ func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.E
 		return nil, 30 * time.Second, nil
 	}
 
-	endpointId, err := a.addEndpoint(ctx, *endpointGroup.EndpointGroupArn, *lb.LoadBalancerArn, ipPreserve)
+	endpointId, err := a.addEndpoint(ctx, *endpointGroup.EndpointGroupArn, *lb.LoadBalancerArn, ipPreserve, weight)
 	if err != nil {
 		klog.Error(err)
 		return nil, 0, err
@@ -877,12 +877,13 @@ func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*gatype
 	return &endpointGroups[0], nil
 }
 
-func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, ipPreserve bool) (*string, error) {
+func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, ipPreserve bool, weight *int32) (*string, error) {
 	input := &globalaccelerator.AddEndpointsInput{
 		EndpointConfigurations: []gatypes.EndpointConfiguration{
 			gatypes.EndpointConfiguration{
 				EndpointId:                  aws.String(lbArn),
 				ClientIPPreservationEnabled: aws.Bool(ipPreserve),
+				Weight:                      weight,
 			},
 		},
 		EndpointGroupArn: aws.String(endpointGroupArn),
