@@ -226,11 +226,13 @@ spec:
 # Annotations
 Annotations for service or ingress resources.
 
-| Annotation | Values |
-|:--------|:---------|
-|`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed`| `true` |
-|`aws-global-accelerator-controller.h3poteto.dev/route53-hostname`|your-host-name|
-|`aws-global-accelerator-controller.h3poteto.dev/client-ip-preservation`| `true` |
+| Annotation | Values | Defaults |
+|:--------|:---------|:--------|
+|`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed`| `true` | |
+|`aws-global-accelerator-controller.h3poteto.dev/route53-hostname`|your-host-name| |
+|`aws-global-accelerator-controller.h3poteto.dev/client-ip-preservation`| `true` | false |
+|`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-name`|accelerator-name| automatically generated|
+|`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-tags`|`Name=value,Env=foo`| `""` |
 
 # Development
 ```
