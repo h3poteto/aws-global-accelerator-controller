@@ -5,6 +5,7 @@ metadata:
     aws-global-accelerator-controller.h3poteto.dev/global-accelerator-managed: "yes"
     aws-global-accelerator-controller.h3poteto.dev/route53-hostname: "*.hoge.h3poteto-test.dev"
     aws-global-accelerator-controller.h3poteto.dev/global-accelerator-name: "h3poteto-test"
+    aws-global-accelerator-controller.h3poteto.dev/global-accelerator-tags: "Environment=foo,Service=bar"
     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
     service.beta.kubernetes.io/aws-load-balancer-type: external
