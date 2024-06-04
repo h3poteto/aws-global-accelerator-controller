@@ -32,6 +32,11 @@ func acceleratorOwnerTagValue(resource, ns, name string) string {
 }
 
 func acceleratorName(resource string, obj metav1.Object) string {
+	name := obj.GetAnnotations()[apis.AWSGlobalAcceleratorNameAnnotation]
+	if name != "" {
+		return name
+	}
+
 	return resource + "-" + obj.GetNamespace() + "-" + obj.GetName()
 }
 
