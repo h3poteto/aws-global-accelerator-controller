@@ -4,6 +4,7 @@ metadata:
   name: h3poteto-test
   namespace: default
 spec:
-  endpointGroupArn: arn:aws:globalaccelerator::564677439943:accelerator/3a7cd52d-38f2-4afe-88bb-fdc8c56efbd8/listener/5c06ca87/endpoint-group/38359e59ed00
+  endpointGroupArn: arn:aws:globalaccelerator::564677439943:accelerator/d1f7cadc-8310-4de6-adad-32df2484d471/listener/4064df5a/endpoint-group/3ee3ade8bd00
+  weight: 100
   serviceRef:
     name: h3poteto-test

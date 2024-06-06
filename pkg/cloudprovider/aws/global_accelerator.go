@@ -592,6 +592,15 @@ func (a *AWS) RemoveLBFromEdnpointGroup(ctx context.Context, endpointGroup *gaty
 	return nil
 }
 
+func (a *AWS) UpdateEndpointWeight(ctx context.Context, endpointGroup *gatypes.EndpointGroup, endpointId string, weight *int32) error {
+	err := a.updateEndpointWeight(ctx, *endpointGroup.EndpointGroupArn, endpointId, weight)
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+	return nil
+}
+
 // ---------------------------------
 // Accelerator methods
 // ---------------------------------
@@ -897,6 +906,24 @@ func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, i
 	}
 	klog.Infof("Endpoint is added: %s", *res.EndpointDescriptions[0].EndpointId)
 	return res.EndpointDescriptions[0].EndpointId, nil
+}
+
+func (a *AWS) updateEndpointWeight(ctx context.Context, endpointGroupArn, endpointId string, weight *int32) error {
+	input := &globalaccelerator.UpdateEndpointGroupInput{
+		EndpointGroupArn: aws.String(endpointGroupArn),
+		EndpointConfigurations: []gatypes.EndpointConfiguration{
+			gatypes.EndpointConfiguration{
+				EndpointId: aws.String(endpointId),
+				Weight:     weight,
+			},
+		},
+	}
+	_, err := a.ga.UpdateEndpointGroup(ctx, input)
+	if err != nil {
+		return err
+	}
+	klog.Infof("Endpoint weight is updated: %s", endpointId)
+	return nil
 }
 
 func (a *AWS) removeEndpoint(ctx context.Context, endpointGroupArn, endpointId string) error {
