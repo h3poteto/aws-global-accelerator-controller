@@ -140,7 +140,7 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 		return reconcile.Result{}, nil
 	}
 
-	endpoint, err := cloud.DescribeEndpointGroup(ctx, obj.Spec.EndpointGroupArn)
+	endpointGroup, err := cloud.DescribeEndpointGroup(ctx, obj.Spec.EndpointGroupArn)
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -149,7 +149,7 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 	results := obj.Status.EndpointIds
 
 	for _, endpointId := range removedEndpointIds {
-		err := regionalCloud.RemoveLBFromEdnpointGroup(ctx, endpoint, endpointId)
+		err := regionalCloud.RemoveLBFromEdnpointGroup(ctx, endpointGroup, endpointId)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
@@ -160,7 +160,7 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 	}
 
 	for _, endpointId := range newEndpointIds {
-		id, retry, err := regionalCloud.AddLBToEndpointGroup(ctx, endpoint, arns[endpointId], obj.Spec.ClientIPPreservation)
+		id, retry, err := regionalCloud.AddLBToEndpointGroup(ctx, endpointGroup, arns[endpointId], obj.Spec.ClientIPPreservation, obj.Spec.Weight)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
@@ -173,6 +173,15 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 		}
 		if id != nil {
 			results = append(results, *id)
+		}
+	}
+
+	// Check weight of the endpoint
+	for id, _ := range arns {
+		err := regionalCloud.UpdateEndpointWeight(ctx, endpointGroup, id, obj.Spec.Weight)
+		if err != nil {
+			klog.Error(err)
+			return reconcile.Result{}, err
 		}
 	}
 

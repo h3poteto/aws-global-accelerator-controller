@@ -30,9 +30,9 @@ type EndpointGroupBindingSpec struct {
 	// +kubebuilder:default=false
 	ClientIPPreservation bool `json:"clientIPPreservation"`
 	// +optional
+	// +nullable
 	// +kubebuilder:validation:Type:=integer
-	// +kubebuilder:default=0
-	Weight int64 `json:"weight"`
+	Weight *int32 `json:"weight"`
 
 	// +optional
 	ServiceRef *ServiceReference `json:"serviceRef"`

@@ -563,7 +563,7 @@ func tagsContainsAllValues(tags []gatypes.Tag, targetTags map[string]string) boo
 	return true
 }
 
-func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.EndpointGroup, lbName string, ipPreserve bool) (*string, time.Duration, error) {
+func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.EndpointGroup, lbName string, ipPreserve bool, weight *int32) (*string, time.Duration, error) {
 	// Describe the LB
 	lb, err := a.GetLoadBalancer(ctx, lbName)
 	if err != nil {
@@ -575,7 +575,7 @@ func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.E
 		return nil, 30 * time.Second, nil
 	}
 
-	endpointId, err := a.addEndpoint(ctx, *endpointGroup.EndpointGroupArn, *lb.LoadBalancerArn, ipPreserve)
+	endpointId, err := a.addEndpoint(ctx, *endpointGroup.EndpointGroupArn, *lb.LoadBalancerArn, ipPreserve, weight)
 	if err != nil {
 		klog.Error(err)
 		return nil, 0, err
@@ -585,6 +585,15 @@ func (a *AWS) AddLBToEndpointGroup(ctx context.Context, endpointGroup *gatypes.E
 
 func (a *AWS) RemoveLBFromEdnpointGroup(ctx context.Context, endpointGroup *gatypes.EndpointGroup, endpointId string) error {
 	err := a.removeEndpoint(ctx, *endpointGroup.EndpointGroupArn, endpointId)
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+	return nil
+}
+
+func (a *AWS) UpdateEndpointWeight(ctx context.Context, endpointGroup *gatypes.EndpointGroup, endpointId string, weight *int32) error {
+	err := a.updateEndpointWeight(ctx, *endpointGroup.EndpointGroupArn, endpointId, weight)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -877,12 +886,13 @@ func (a *AWS) GetEndpointGroup(ctx context.Context, listenerArn string) (*gatype
 	return &endpointGroups[0], nil
 }
 
-func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, ipPreserve bool) (*string, error) {
+func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, ipPreserve bool, weight *int32) (*string, error) {
 	input := &globalaccelerator.AddEndpointsInput{
 		EndpointConfigurations: []gatypes.EndpointConfiguration{
 			gatypes.EndpointConfiguration{
 				EndpointId:                  aws.String(lbArn),
 				ClientIPPreservationEnabled: aws.Bool(ipPreserve),
+				Weight:                      weight,
 			},
 		},
 		EndpointGroupArn: aws.String(endpointGroupArn),
@@ -896,6 +906,24 @@ func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, i
 	}
 	klog.Infof("Endpoint is added: %s", *res.EndpointDescriptions[0].EndpointId)
 	return res.EndpointDescriptions[0].EndpointId, nil
+}
+
+func (a *AWS) updateEndpointWeight(ctx context.Context, endpointGroupArn, endpointId string, weight *int32) error {
+	input := &globalaccelerator.UpdateEndpointGroupInput{
+		EndpointGroupArn: aws.String(endpointGroupArn),
+		EndpointConfigurations: []gatypes.EndpointConfiguration{
+			gatypes.EndpointConfiguration{
+				EndpointId: aws.String(endpointId),
+				Weight:     weight,
+			},
+		},
+	}
+	_, err := a.ga.UpdateEndpointGroup(ctx, input)
+	if err != nil {
+		return err
+	}
+	klog.Infof("Endpoint weight is updated: %s", endpointId)
+	return nil
 }
 
 func (a *AWS) removeEndpoint(ctx context.Context, endpointGroupArn, endpointId string) error {
