@@ -6,7 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.27.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.17
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.31.2
-	github.com/aws/aws-sdk-go-v2/service/globalaccelerator v1.23.6
+	github.com/aws/aws-sdk-go-v2/service/globalaccelerator v1.24.0
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.40.9
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1
