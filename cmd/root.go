@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"github.com/h3poteto/aws-global-accelerator-controller/cmd/controller"
+	"github.com/h3poteto/aws-global-accelerator-controller/cmd/webhook"
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
 )
@@ -23,6 +24,7 @@ func init() {
 	RootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 	RootCmd.AddCommand(
 		controller.ControllerCmd(),
+		webhook.WebhookCmd(),
 		versionCmd(),
 	)
 }
