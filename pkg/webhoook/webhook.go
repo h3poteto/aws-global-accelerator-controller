@@ -27,6 +27,7 @@ func Healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func ValidateEndpointGroupBinding(w http.ResponseWriter, r *http.Request) {
+
 	in, err := parseRequest(*r)
 	if err != nil {
 		klog.Error(err)
@@ -42,6 +43,7 @@ func ValidateEndpointGroupBinding(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	w.Write(out)
 }
 
