@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/h3poteto/aws-global-accelerator-controller/fixture"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/fixture"
 	admissionv1 "k8s.io/api/admission/v1"
 	authenicationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
