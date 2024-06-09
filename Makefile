@@ -7,7 +7,7 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-CRD_OPTIONS ?= "crd"
+CRD_OPTIONS ?= crd
 CODE_GENERATOR=${GOPATH}/src/k8s.io/code-generator
 CODE_GENERATOR_TAG=v0.28.8
 CONTROLLER_TOOLS_TAG=v0.13.0
@@ -49,7 +49,7 @@ endif
 
 
 manifests: controller-gen
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role paths=./... output:crd:artifacts:config=./config/crd/
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role webhook paths=./... output:crd:artifacts:config=./config/crd/ output:webhook:artifacts:config=./config/webhook/
 
 
 controller-gen:

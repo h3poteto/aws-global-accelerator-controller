@@ -10,6 +10,8 @@ type options struct {
 	tlsKeyFile  string
 }
 
+// +kubebuilder:webhook:path=/validate-endpointgroupbinding,mutating=false,failurePolicy=fail,sideEffects=None,groups=operator.h3poteto.dev,resources=endpointgroupbindings,verbs=create;update,versions=v1alpha1,name=validate-endpointgroupbinding.h3poteto.dev,admissionReviewVersions=v1
+
 func WebhookCmd() *cobra.Command {
 	o := &options{}
 	cmd := &cobra.Command{
