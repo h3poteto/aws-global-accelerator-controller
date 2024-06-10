@@ -1,0 +1,79 @@
+name: E2E
+
+on:
+  push:
+    branches:
+      - master
+
+  # Run tests for any PRs.
+  pull_request:
+
+env:
+  IMAGE_NAME: aws-global-accelerator
+  KIND_VERSION: v0.22.0
+  KUBECTL_VERSION: v1.29.5
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        k8s-version: [1.28.9, 1.29.4]
+
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+      - name: Install kind
+        env:
+          KIND_VERSION: ${{ env.KIND_VERSION }}
+          BIN_DIR: ${{ github.workspace }}/tools/
+        run: |
+          mkdir -p $BIN_DIR
+          curl -sSLo "$BIN_DIR/kind" "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          chmod +x "$BIN_DIR/kind"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+      - name: Install kubectl
+        env:
+          KUBECTL_VERSION: ${{ env.KUBECTL_VERSION }}
+          BIN_DIR: ${{ github.workspace }}/tools/
+        run: |
+          mkdir -p $BIN_DIR
+          curl -sSLo "$BIN_DIR/kubectl" "https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x "$BIN_DIR/kubectl"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+      - name: Setup kind ${{ matrix.k8s-version }}
+        env:
+          K8S_VERSION: ${{ matrix.k8s-version }}
+        run: |
+          ./hack/kind-with-registry.sh
+      - name: Info
+        run: |
+          kind version
+          kubectl cluster-info
+          kubectl version
+      - name: Install cert-manager
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.crds.yaml
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.yaml
+      - name: Build docker image
+        run: |
+          IMAGE_ID=localhost:5000/$IMAGE_NAME
+          SHA=${{ github.sha }}
+          docker build . --file Dockerfile --tag $IMAGE_ID:$SHA
+          docker push $IMAGE_ID:$SHA
+      - name: Install ginkgo
+        run: |
+          go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
+      - name: Check nodes
+        run: |
+          kubectl get node
+      - name: Testing
+        run: |
+          IMAGE_ID=localhost:5000/$IMAGE_NAME
+          SHA=${{ github.sha }}
+          export WEBHOOK_IMAGE=$IMAGE_ID:$SHA
+          go mod download
+          ginkgo -r ./e2e

@@ -25,10 +25,13 @@ import (
 )
 
 var (
-	cfg       *rest.Config
-	ownClient *ownclientset.Clientset
-	client    *kubernetes.Clientset
-	ns        = "kube-system"
+	cfg         *rest.Config
+	ownClient   *ownclientset.Clientset
+	client      *kubernetes.Clientset
+	resourceNS  = "kube-public"
+	webhookNS   = "default"
+	secretName  = "webhook-certs"
+	serviceName = "webhook-service"
 )
 
 var _ = BeforeSuite(func() {
@@ -58,24 +61,8 @@ var _ = Describe("E2E", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
-		_, err := client.CoreV1().Namespaces().Get(ctx, "system", metav1.GetOptions{})
-		if err != nil {
-			_, err := client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "system",
-				},
-			}, metav1.CreateOptions{})
-			if err != nil {
-				panic(err)
-			}
-		}
-
 		// Apply CRDs
 		if err := util.ApplyCRD(ctx, cfg); err != nil {
-			panic(err)
-		}
-		// Apply webhook manifests
-		if err := util.ApplyWebhook(ctx, cfg); err != nil {
 			panic(err)
 		}
 		// Deployment, service, Certificate, Issuer
@@ -86,13 +73,13 @@ var _ = Describe("E2E", func() {
 
 	AfterEach(func() {
 		// Delete all endpointgroupbinding
-		ownClient.OperatorV1alpha1().EndpointGroupBindings(ns).DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{})
+		ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{})
 	})
 	It("Changing ARN", func() {
 		resource := fixture.EndpointGroupBinding(false, "example", utilpointer.Int32(100), "arn:aws:globalaccelerator::123456789012:accelerator/1234abcd-abcd-1234-abcd-1234abcd1234")
-		_, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(ns).Create(context.Background(), &resource, metav1.CreateOptions{})
+		_, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Create(context.Background(), &resource, metav1.CreateOptions{})
 		Expect(err).ShouldNot(HaveOccurred())
-		current, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(ns).Get(context.Background(), resource.Name, metav1.GetOptions{})
+		current, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Get(context.Background(), resource.Name, metav1.GetOptions{})
 		Expect(err).ShouldNot(HaveOccurred())
 		current.Spec.EndpointGroupArn = "arn:aws:globalaccelerator::123456789012:accelerator/5678efgh-efgh-5678-efgh-5678efgh5678"
 		_, err = ownClient.OperatorV1alpha1().EndpointGroupBindings(current.Namespace).Update(context.Background(), current, metav1.UpdateOptions{})
@@ -101,9 +88,9 @@ var _ = Describe("E2E", func() {
 	})
 	It("Changing weight", func() {
 		resource := fixture.EndpointGroupBinding(false, "example", utilpointer.Int32(100), "arn:aws:globalaccelerator::123456789012:accelerator/1234abcd-abcd-1234-abcd-1234abcd1234")
-		_, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(ns).Create(context.Background(), &resource, metav1.CreateOptions{})
+		_, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Create(context.Background(), &resource, metav1.CreateOptions{})
 		Expect(err).ShouldNot(HaveOccurred())
-		current, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(ns).Get(context.Background(), resource.Name, metav1.GetOptions{})
+		current, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Get(context.Background(), resource.Name, metav1.GetOptions{})
 		Expect(err).ShouldNot(HaveOccurred())
 		current.Spec.Weight = utilpointer.Int32(200)
 		_, err = ownClient.OperatorV1alpha1().EndpointGroupBindings(current.Namespace).Update(context.Background(), current, metav1.UpdateOptions{})
@@ -147,39 +134,41 @@ func nodeIsReady(node *corev1.Node) bool {
 }
 
 func applyWebhook(ctx context.Context, cfg *rest.Config, client *kubernetes.Clientset) error {
-	secretName := "webhook-certs"
-	serviceName := "webhook-service" // defined in webhook manifests.yaml
-	namespace := "system"            // defined in webhook manifests.yaml
-
 	// Apply Issuer
-	err := util.ApplyIssuer(ctx, cfg, namespace)
+	err := util.ApplyIssuer(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	// Apply Certificate
-	err = util.ApplyCertificate(ctx, cfg, namespace, serviceName, secretName)
+	err = util.ApplyCertificate(ctx, cfg, webhookNS, serviceName, webhookNS, secretName)
 	if err != nil {
 		return err
 	}
+
+	// Apply webhook configuration manifests
+	if err := util.ApplyWebhook(ctx, cfg, webhookNS, serviceName, "/validate-endpointgroupbinding"); err != nil {
+		return err
+	}
+
 	// Apply Deployment
 	image := os.Getenv("WEBHOOK_IMAGE")
-	deploy := fixtures.WebhookDeployment("webhook", namespace, image, secretName)
-	if _, err := client.AppsV1().Deployments("system").Get(ctx, deploy.Name, metav1.GetOptions{}); err != nil {
-		_, err = client.AppsV1().Deployments("system").Create(ctx, deploy, metav1.CreateOptions{})
+	deploy := fixtures.WebhookDeployment("webhook", webhookNS, image, secretName)
+	if _, err := client.AppsV1().Deployments(webhookNS).Get(ctx, deploy.Name, metav1.GetOptions{}); err != nil {
+		_, err = client.AppsV1().Deployments(webhookNS).Create(ctx, deploy, metav1.CreateOptions{})
 		if err != nil {
 			return err
 		}
 	}
 	// Apply Service
-	service := fixtures.WebhookService(serviceName, namespace)
-	if _, err := client.CoreV1().Services("system").Get(ctx, service.Name, metav1.GetOptions{}); err != nil {
-		_, err = client.CoreV1().Services("system").Create(ctx, service, metav1.CreateOptions{})
+	service := fixtures.WebhookService(serviceName, webhookNS)
+	if _, err := client.CoreV1().Services(webhookNS).Get(ctx, service.Name, metav1.GetOptions{}); err != nil {
+		_, err = client.CoreV1().Services(webhookNS).Create(ctx, service, metav1.CreateOptions{})
 		if err != nil {
 			return err
 		}
 	}
 	wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
-		deployment, err := client.AppsV1().Deployments("system").Get(ctx, deploy.Name, metav1.GetOptions{})
+		deployment, err := client.AppsV1().Deployments(webhookNS).Get(ctx, deploy.Name, metav1.GetOptions{})
 		if err != nil {
 			klog.Errorf("Failed to get deployment: %v", err)
 			return false, nil

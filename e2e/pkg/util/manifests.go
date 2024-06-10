@@ -26,8 +26,9 @@ import (
 )
 
 var (
-	issuerName      = "e2e"
-	certificateName = "e2e"
+	issuerName           = "e2e"
+	certificateName      = "e2e"
+	certificateNamespace = "default"
 )
 
 func ApplyCRD(ctx context.Context, cfg *rest.Config) error {
@@ -44,30 +45,24 @@ func ApplyCRD(ctx context.Context, cfg *rest.Config) error {
 	return apply(ctx, cfg, buf)
 }
 
-func ApplyWebhook(ctx context.Context, cfg *rest.Config) error {
-	p, err := os.Getwd()
+func ApplyWebhook(ctx context.Context, cfg *rest.Config, serviceNS, serviceName, serviceEndpoint string) error {
+	webhookconfiguration, err := templates.WebhookConfiguration(certificateNamespace, certificateName, serviceNS, serviceName, serviceEndpoint)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(p, "../config/webhook/manifests.yaml")
-
-	buf, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	return apply(ctx, cfg, buf)
+	return apply(ctx, cfg, webhookconfiguration.Bytes())
 }
 
-func ApplyIssuer(ctx context.Context, cfg *rest.Config, namespace string) error {
-	issuer, err := templates.Issuer(issuerName, namespace)
+func ApplyIssuer(ctx context.Context, cfg *rest.Config) error {
+	issuer, err := templates.Issuer(issuerName, certificateNamespace)
 	if err != nil {
 		return err
 	}
 	return apply(ctx, cfg, issuer.Bytes())
 }
 
-func ApplyCertificate(ctx context.Context, cfg *rest.Config, namespace, service, secret string) error {
-	certificate, err := templates.Certificate(certificateName, namespace, issuerName, service, secret)
+func ApplyCertificate(ctx context.Context, cfg *rest.Config, serivceNS, service, secretNS, secret string) error {
+	certificate, err := templates.Certificate(certificateName, certificateNamespace, issuerName, service, secret)
 	if err != nil {
 		return err
 	}
