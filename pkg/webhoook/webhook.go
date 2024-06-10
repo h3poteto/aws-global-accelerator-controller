@@ -15,19 +15,20 @@ func Server(tlsCertFile, tlsKeyFile string) {
 	http.HandleFunc("/healthz", Healthz)
 	http.HandleFunc("/validate-endpointgroupbinding", ValidateEndpointGroupBinding)
 
-	klog.Infof("Listening on :443")
-	err := http.ListenAndServeTLS(":443", tlsCertFile, tlsKeyFile, nil)
+	klog.Infof("Listening on :8443")
+	err := http.ListenAndServeTLS(":8443", tlsCertFile, tlsKeyFile, nil)
 	if err != nil {
 		klog.Fatalf("Failed to start server: %v", err)
 	}
 }
 
 func Healthz(w http.ResponseWriter, r *http.Request) {
+	klog.Infof("healthz")
 	w.WriteHeader(http.StatusOK)
 }
 
 func ValidateEndpointGroupBinding(w http.ResponseWriter, r *http.Request) {
-
+	klog.Infof("validate-endpointgroupbinding")
 	in, err := parseRequest(*r)
 	if err != nil {
 		klog.Error(err)
