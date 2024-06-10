@@ -82,7 +82,7 @@ func NewEndpointGroupBindingController(kubeclient kubernetes.Interface, ownclien
 	endpoingGroupBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueue,
 		UpdateFunc: func(old, new interface{}) {
-			// TODO: Block changing spec.EndpointGroupArn field in ValidatingWebhook
+			// Changing Spec.EndpointGroupArn field is blocked by ValidatingWebhook
 			oldEG := old.(*endpointgroupbindingv1alpha1.EndpointGroupBinding)
 			newEG := new.(*endpointgroupbindingv1alpha1.EndpointGroupBinding)
 			if oldEG.Spec.EndpointGroupArn != newEG.Spec.EndpointGroupArn {
