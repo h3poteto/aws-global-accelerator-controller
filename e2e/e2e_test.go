@@ -2,18 +2,18 @@ package e2e_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
-	"github.com/h3poteto/aws-global-accelerator-controller/e2e/pkg/fixtures"
-	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/h3poteto/aws-global-accelerator-controller/e2e/pkg/fixtures"
+	"github.com/h3poteto/aws-global-accelerator-controller/e2e/pkg/util"
+	ownclientset "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/clientset/versioned"
+	"github.com/h3poteto/aws-global-accelerator-controller/pkg/fixture"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -21,14 +21,17 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 var (
 	cfg         *rest.Config
-	kubeClient  *kubernetes.Clientset
-	namespace   string
-	hostname    string
-	clusterName string
+	ownClient   *ownclientset.Clientset
+	client      *kubernetes.Clientset
+	resourceNS  = "kube-public"
+	webhookNS   = "default"
+	secretName  = "webhook-certs"
+	serviceName = "webhook-service"
 )
 
 var _ = BeforeSuite(func() {
@@ -39,190 +42,66 @@ var _ = BeforeSuite(func() {
 	var err error
 	cfg, err = clientcmd.BuildConfigFromFlags("", os.ExpandEnv(configfile))
 	Expect(err).ShouldNot(HaveOccurred())
-	kubeClient, err = kubernetes.NewForConfig(cfg)
-	Expect(err).ShouldNot(HaveOccurred())
-	err = waitUntilReady(context.Background(), kubeClient)
-	Expect(err).ShouldNot(HaveOccurred())
-	hostname = os.Getenv("E2E_HOSTNAME")
-	Expect(hostname).ShouldNot(BeEmpty(), "Env var E2E_HOSTNAME is required")
-	acmArn := os.Getenv("E2E_ACM_ARN")
-	Expect(acmArn).ShouldNot(BeEmpty(), "Env var E2E_ACM_ARN is required")
-	namespace = os.Getenv("E2E_NAMESPACE")
-	if namespace == "" {
-		namespace = "default"
-	}
-	clusterName = "e2e"
 
-	ctx := context.Background()
-	image := os.Getenv("E2E_MANAGER_IMAGE")
-	Expect(image).ShouldNot(BeEmpty(), "Env var E2E_MANAGER_IMAGE is required")
-	err = fixtures.ApplyClusterRole(ctx, cfg)
-	Expect(err).ShouldNot(HaveOccurred())
-	sa, crb, dep := fixtures.NewManagerManifests(namespace, "aws-global-accelerator-controller", image, clusterName)
-	_, err = kubeClient.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
-	Expect(err).ShouldNot(HaveOccurred())
-	_, err = kubeClient.RbacV1().ClusterRoleBindings().Create(ctx, crb, metav1.CreateOptions{})
-	Expect(err).ShouldNot(HaveOccurred())
-	_, err = kubeClient.AppsV1().Deployments(namespace).Create(ctx, dep, metav1.CreateOptions{})
+	client, err = kubernetes.NewForConfig(cfg)
 	Expect(err).ShouldNot(HaveOccurred())
 
-	DeferCleanup(func() {
-		_ = kubeClient.AppsV1().Deployments(namespace).Delete(ctx, dep.Name, metav1.DeleteOptions{})
-		_ = kubeClient.RbacV1().ClusterRoleBindings().Delete(ctx, crb.Name, metav1.DeleteOptions{})
-		_ = kubeClient.CoreV1().ServiceAccounts(namespace).Delete(ctx, sa.Name, metav1.DeleteOptions{})
-		_ = fixtures.DeleteClusterRole(ctx, cfg)
-	})
+	ownClient, err = ownclientset.NewForConfig(cfg)
+	Expect(err).ShouldNot(HaveOccurred())
 
-	err = wait.Poll(5*time.Second, 2*time.Minute, func() (bool, error) {
-		deploy, err := kubeClient.AppsV1().Deployments(namespace).Get(ctx, dep.Name, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		klog.Infof("Deployment %s/%s is available %d/%d", deploy.Namespace, deploy.Name, deploy.Status.AvailableReplicas, *deploy.Spec.Replicas)
-		if deploy.Status.AvailableReplicas == *deploy.Spec.Replicas && deploy.Status.ReadyReplicas == *deploy.Spec.Replicas {
-			return true, nil
-		}
-		return false, nil
-	})
-	Expect(err).ShouldNot(HaveOccurred(), "Manager pods are not running")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	err = waitUntilReady(ctx, client)
+	Expect(err).ShouldNot(HaveOccurred())
 })
 
 var _ = Describe("E2E", func() {
-	Describe("Global Accelerator and Route53", func() {
-		Context("Service type Load Balancer", func() {
-			It("Resources should be created", func() {
-				ctx := context.Background()
-				svc := fixtures.NewNLBService(namespace, "e2e-test", hostname)
-				svc, err := kubeClient.CoreV1().Services(namespace).Create(ctx, svc, metav1.CreateOptions{})
-				Expect(err).ShouldNot(HaveOccurred())
+	BeforeEach(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
 
-				hostnames := strings.Split(hostname, ",")
-
-				By("Wait until LoadBalancer is created", func() {
-					err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-						currentService, err := kubeClient.CoreV1().Services(namespace).Get(ctx, svc.Name, metav1.GetOptions{})
-						if err != nil {
-							return false, err
-						}
-						if len(currentService.Status.LoadBalancer.Ingress) > 0 {
-							return true, nil
-						}
-						klog.Infof("%s/%s does not have loadBalancer yet", currentService.Namespace, currentService.Name)
-						return false, nil
-					})
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-
-				svc, err = kubeClient.CoreV1().Services(svc.Namespace).Get(ctx, svc.Name, metav1.GetOptions{})
-				Expect(err).ShouldNot(HaveOccurred())
-
-				lbName, region, err := cloudaws.GetLBNameFromHostname(svc.Status.LoadBalancer.Ingress[0].Hostname)
-				Expect(err).ShouldNot(HaveOccurred())
-				cloud, err := cloudaws.NewAWS(region)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				DeferCleanup(func() error {
-					kubeClient.CoreV1().Services(svc.Namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
-					err = waitUntilCleanup(cloud, hostnames, clusterName, "service", svc)
-					return err
-				})
-
-				By("Wait until Global Accelerator is created", func() {
-					err = waitUntilGlobalAccelerator(cloud, lbName, clusterName, "service", svc)
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-
-				By("Wait until Route53 record is created", func() {
-					err = waitUntilRoute53(cloud, hostnames, svc.Status.LoadBalancer.Ingress[0].Hostname, clusterName, "service", svc)
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-
-				By("Remove resources", func() {
-					err := kubeClient.CoreV1().Services(svc.Namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
-					Expect(err).ShouldNot(HaveOccurred())
-					err = waitUntilCleanup(cloud, hostnames, clusterName, "service", svc)
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-			})
-		})
-
-		Context("Ingress Load Balancer", func() {
-			It("Resources should be created", func() {
-				ctx := context.Background()
-				ingress := fixtures.NewALBIngress(namespace, "e2e-test", hostname, 443)
-				ingress, err := kubeClient.NetworkingV1().Ingresses(namespace).Create(ctx, ingress, metav1.CreateOptions{})
-				Expect(err).ShouldNot(HaveOccurred())
-
-				hostnames := strings.Split(hostname, ",")
-
-				By("Wait until LoadBalancer is created", func() {
-					err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-						currentIngress, err := kubeClient.NetworkingV1().Ingresses(namespace).Get(ctx, ingress.Name, metav1.GetOptions{})
-						if err != nil {
-							return false, err
-						}
-						if len(currentIngress.Status.LoadBalancer.Ingress) > 0 {
-							return true, nil
-						}
-						klog.Infof("%s/%s does not have loadBalancer yet", currentIngress.Namespace, currentIngress.Name)
-						return false, nil
-					})
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-
-				ingress, err = kubeClient.NetworkingV1().Ingresses(ingress.Namespace).Get(ctx, ingress.Name, metav1.GetOptions{})
-				Expect(err).ShouldNot(HaveOccurred())
-
-				lbName, region, err := cloudaws.GetLBNameFromHostname(ingress.Status.LoadBalancer.Ingress[0].Hostname)
-				Expect(err).ShouldNot(HaveOccurred())
-				cloud, err := cloudaws.NewAWS(region)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				DeferCleanup(func() error {
-					kubeClient.NetworkingV1().Ingresses(ingress.Namespace).Delete(ctx, ingress.Name, metav1.DeleteOptions{})
-					err = waitUntilCleanup(cloud, hostnames, clusterName, "ingress", ingress)
-					return err
-				})
-
-				By("Wait until Global Accelerator is created", func() {
-					err = waitUntilGlobalAccelerator(cloud, lbName, clusterName, "ingress", ingress)
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-
-				By("Check Listener ports", func() {
-					ctx := context.Background()
-					accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, clusterName, "ingress", ingress.GetNamespace(), ingress.GetName())
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(len(accelerators)).To(Equal(1))
-					for _, accelerator := range accelerators {
-						listener, err := cloud.GetListener(ctx, *accelerator.AcceleratorArn)
-						Expect(err).ShouldNot(HaveOccurred())
-						Expect(len(listener.PortRanges)).To(Equal(1))
-						portRange := listener.PortRanges[0]
-						Expect(*portRange.FromPort).To(Equal(int64(443)))
-						Expect(*portRange.ToPort).To(Equal(int64(443)))
-					}
-				})
-
-				By("Wait until Route53 record is created", func() {
-					err = waitUntilRoute53(cloud, hostnames, ingress.Status.LoadBalancer.Ingress[0].Hostname, clusterName, "ingress", ingress)
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-
-				By("Remove resources", func() {
-					err := kubeClient.NetworkingV1().Ingresses(ingress.Namespace).Delete(ctx, ingress.Name, metav1.DeleteOptions{})
-					Expect(err).ShouldNot(HaveOccurred())
-					err = waitUntilCleanup(cloud, hostnames, clusterName, "ingress", ingress)
-					Expect(err).ShouldNot(HaveOccurred())
-				})
-			})
-		})
+		// Apply CRDs
+		if err := util.ApplyCRD(ctx, cfg); err != nil {
+			panic(err)
+		}
+		// Deployment, service, Certificate, Issuer
+		if err := applyWebhook(ctx, cfg, client); err != nil {
+			panic(err)
+		}
 	})
+
+	AfterEach(func() {
+		// Delete all endpointgroupbinding
+		ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{})
+	})
+	It("Changing ARN", func() {
+		resource := fixture.EndpointGroupBinding(false, "example", utilpointer.Int32(100), "arn:aws:globalaccelerator::123456789012:accelerator/1234abcd-abcd-1234-abcd-1234abcd1234")
+		_, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Create(context.Background(), &resource, metav1.CreateOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+		current, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Get(context.Background(), resource.Name, metav1.GetOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+		current.Spec.EndpointGroupArn = "arn:aws:globalaccelerator::123456789012:accelerator/5678efgh-efgh-5678-efgh-5678efgh5678"
+		_, err = ownClient.OperatorV1alpha1().EndpointGroupBindings(current.Namespace).Update(context.Background(), current, metav1.UpdateOptions{})
+		Expect(err).Should(HaveOccurred())
+		Expect(strings.Contains(err.Error(), "Spec.EndpointGroupArn is immutable")).Should(BeTrue())
+	})
+	It("Changing weight", func() {
+		resource := fixture.EndpointGroupBinding(false, "example", utilpointer.Int32(100), "arn:aws:globalaccelerator::123456789012:accelerator/1234abcd-abcd-1234-abcd-1234abcd1234")
+		_, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Create(context.Background(), &resource, metav1.CreateOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+		current, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Get(context.Background(), resource.Name, metav1.GetOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+		current.Spec.Weight = utilpointer.Int32(200)
+		_, err = ownClient.OperatorV1alpha1().EndpointGroupBindings(current.Namespace).Update(context.Background(), current, metav1.UpdateOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+	})
+
 })
 
 func waitUntilReady(ctx context.Context, client *kubernetes.Clientset) error {
 	klog.Info("Waiting until kubernetes cluster is ready")
-	err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
+	err := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
 		nodeList, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, fmt.Errorf("failed to list nodes: %v", err)
@@ -254,132 +133,51 @@ func nodeIsReady(node *corev1.Node) bool {
 	return false
 }
 
-func waitUntilGlobalAccelerator(cloud *cloudaws.AWS, lbName, clusterName, resource string, obj metav1.Object) error {
-	ctx := context.Background()
-	lb, err := cloud.GetLoadBalancer(ctx, lbName)
+func applyWebhook(ctx context.Context, cfg *rest.Config, client *kubernetes.Clientset) error {
+	// Apply Issuer
+	err := util.ApplyIssuer(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	// Apply Certificate
+	err = util.ApplyCertificate(ctx, cfg, webhookNS, serviceName, webhookNS, secretName)
 	if err != nil {
 		return err
 	}
 
-	err = wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
-		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, clusterName, resource, obj.GetNamespace(), obj.GetName())
-		if err != nil {
-			return false, err
-		}
-		if len(accelerators) == 0 {
-			klog.Infof("There is no accelerator related %s %s/%s", resource, obj.GetNamespace(), obj.GetName())
-			return false, nil
-		}
-		for _, accelerator := range accelerators {
-			listener, err := cloud.GetListener(ctx, *accelerator.AcceleratorArn)
-			var listenerNotFoundErr *gatypes.ListenerNotFoundException
-			if errors.As(err, &listenerNotFoundErr) {
-				klog.Info(err.Error())
-				return false, nil
-			}
-			if err != nil {
-				return false, err
-			}
-			endpoint, err := cloud.GetEndpointGroup(ctx, *listener.ListenerArn)
-			var endpointNotFoundErr *gatypes.EndpointGroupNotFoundException
-			if errors.As(err, &endpointNotFoundErr) {
-				klog.Info(err.Error())
-				return false, nil
-			}
-			if err != nil {
-				return false, err
-			}
-			for _, d := range endpoint.EndpointDescriptions {
-				if *d.EndpointId == *lb.LoadBalancerArn {
-					klog.Infof("Global Accelerator %s is created", *accelerator.AcceleratorArn)
-					return true, nil
-				}
-			}
-		}
-		klog.Infof("There is no endpoint group related %s %s/%s", resource, obj.GetNamespace(), obj.GetName())
-		return false, nil
-	})
-	return err
-}
-
-func waitUntilRoute53(cloud *cloudaws.AWS, hostnames []string, lbHostname, clusterName, resource string, obj metav1.Object) error {
-	ctx := context.Background()
-	accelerators, err := cloud.ListGlobalAcceleratorByHostname(ctx, lbHostname, clusterName)
-	if err != nil {
+	// Apply webhook configuration manifests
+	if err := util.ApplyWebhook(ctx, cfg, webhookNS, serviceName, "/validate-endpointgroupbinding"); err != nil {
 		return err
 	}
-	acceleratorHostname := *accelerators[0].DnsName
 
-	for _, h := range hostnames {
-		hostedZone, err := cloud.GetHostedZone(ctx, h)
-		Expect(err).ShouldNot(HaveOccurred())
-
-		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-			records, err := cloud.FindOwneredARecordSets(ctx, hostedZone, cloudaws.Route53OwnerValue(clusterName, resource, obj.GetNamespace(), obj.GetName()))
-			if err != nil {
-				return false, err
-			}
-			if len(records) == 0 {
-				klog.Infof("There is no route53 record related %s %s/%s", resource, obj.GetNamespace(), obj.GetName())
-				return false, nil
-			}
-			for _, record := range records {
-				if record.AliasTarget != nil && *record.AliasTarget.DNSName == acceleratorHostname+"." {
-					klog.Infof("Route53 record is created: %s", *record.AliasTarget.DNSName)
-					return true, nil
-				}
-			}
-			klog.Infof("There is no route53 record related Global Accelerator: %s", acceleratorHostname)
+	// Apply Deployment
+	image := os.Getenv("WEBHOOK_IMAGE")
+	deploy := fixtures.WebhookDeployment("webhook", webhookNS, image, secretName)
+	if _, err := client.AppsV1().Deployments(webhookNS).Get(ctx, deploy.Name, metav1.GetOptions{}); err != nil {
+		_, err = client.AppsV1().Deployments(webhookNS).Create(ctx, deploy, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	// Apply Service
+	service := fixtures.WebhookService(serviceName, webhookNS)
+	if _, err := client.CoreV1().Services(webhookNS).Get(ctx, service.Name, metav1.GetOptions{}); err != nil {
+		_, err = client.CoreV1().Services(webhookNS).Create(ctx, service, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		deployment, err := client.AppsV1().Deployments(webhookNS).Get(ctx, deploy.Name, metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("Failed to get deployment: %v", err)
 			return false, nil
-		})
-		if err != nil {
-			return err
 		}
-	}
-	return nil
-}
-
-func waitUntilCleanup(cloud *cloudaws.AWS, hostnames []string, clusterName, resource string, obj metav1.Object) error {
-	if cloud == nil {
-		return nil
-	}
-	if obj == nil {
-		return nil
-	}
-	ctx := context.Background()
-	for _, h := range hostnames {
-		hostedZone, err := cloud.GetHostedZone(ctx, h)
-		if err != nil {
-			return err
-		}
-		err = wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-			records, err := cloud.FindOwneredARecordSets(ctx, hostedZone, cloudaws.Route53OwnerValue(clusterName, resource, obj.GetNamespace(), obj.GetName()))
-			if err != nil {
-				return false, err
-			}
-			if len(records) == 0 {
-				klog.Info("All Route53 records are deleted")
-				return true, nil
-			}
-			klog.Info("There are some Route53 records")
-			return false, nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-		accelerators, err := cloud.ListGlobalAcceleratorByResource(ctx, clusterName, resource, obj.GetNamespace(), obj.GetName())
-		if err != nil {
-			return false, err
-		}
-		if len(accelerators) == 0 {
-			klog.Info("All Global Accelerators are deleted")
+		if deployment.Status.ReadyReplicas > 0 {
 			return true, nil
 		}
-		klog.Info("There are some Global Accelerators")
+		klog.Info("Waiting for deployment ready")
 		return false, nil
 	})
-	return err
+	return nil
 }

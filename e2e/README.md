@@ -1,23 +1,31 @@
 # How to run E2E tests in local
+## Setup kind
 
-## Pre-requirements
-- [kops](https://github.com/kubernetes/kops)
-- [ginkgo v2](https://github.com/onsi/ginkgo)
+Install kind, please refer: https://kind.sigs.k8s.io/
 
-## Prepare a Kubernetes Cluster
-Please rewrite `e2e/cluster.yaml` for your environment, and create a cluster.
+And bootstrap a cluster.
 
 ```
-$ kops create -f e2e/cluster.yaml
-$ kops create secret --name $CLUSTER_NAME sshpublickey admin -i ~/.ssh/id_rsa.pub
-$ kops update cluster --name $CLUSTER_NAME --yes --admin
-$ kops validate cluster --name $CLUSTER_NAME --wait 10m
+$ K8S_VERSION=1.29.4 ./hack/kind-with-registry.sh
 ```
 
-Wait until creating the cluster.
-
-## Run E2E test
+Install cert-manager
 
 ```
-$ E2E_HOSTNAME=foo.h3poteto-test.dev E2E_MANAGER_IMAGE=ghcr.io/h3poteto/aws-global-accelerator-controller:latest ginkgo -r ./e2e
+$ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.crds.yaml
+$ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.yaml
+```
+
+## Build docker and push
+```
+$ export IMAGE_ID=localhost:5000/aws-global-accelerator-controller
+$ docker build . --tag ${IMAGE_ID}:e2e
+$ docker push ${IMAGE_ID}:e2e
+```
+
+## Execute e2e test
+```
+$ go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
+$ export WEBHOOK_IMAGE=${IMAGE_ID}:e2e
+$ ginkgo -r ./e2e
 ```
