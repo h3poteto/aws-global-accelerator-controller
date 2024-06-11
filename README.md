@@ -13,6 +13,11 @@ AWS Global Accelerator Controller is a controller to manage Global Accelerator f
 
 
 # Install
+## Install cert-manager
+This controller uses webhook, so please install [cert-manager](https://cert-manager.io/) at first.
+
+
+## Install
 You can install this controller using helm.
 
 ```
@@ -40,6 +45,7 @@ This controller requires these permissions, so please assign this policy to the 
       "globalaccelerator:CreateListener",
       "globalaccelerator:UpdateListener",
       "globalaccelerator:DeleteListener",
+      "globalaccelerator:DescribeEndpointGroup",
       "globalaccelerator:ListEndpointGroups",
       "globalaccelerator:CreateEndpointGroup",
       "globalaccelerator:UpdateEndpointGroup",
