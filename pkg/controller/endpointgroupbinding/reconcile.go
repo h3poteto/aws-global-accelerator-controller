@@ -2,16 +2,17 @@ package endpointgroupbinding
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"time"
 
-	"golang.org/x/exp/maps"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog/v2"
-
+	"github.com/aws/smithy-go"
 	endpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/endpointgroupbinding/v1alpha1"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 	"github.com/h3poteto/aws-global-accelerator-controller/pkg/reconcile"
+	"golang.org/x/exp/maps"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 )
 
 const finalizer = "operator.h3poteto.dev/endpointgroupbindings"
@@ -46,8 +47,25 @@ func (c *EndpointGroupBindingController) reconcileDelete(ctx context.Context, ob
 
 	endpoint, err := cloud.DescribeEndpointGroup(ctx, obj.Spec.EndpointGroupArn)
 	if err != nil {
+		// If the endpoint group is not found, we should remove the finalizer and update the object.
+		var awsErr smithy.APIError
+		if errors.As(err, &awsErr) {
+			klog.V(1).Infof("Failed to get EndpointGroup %s: %s", obj.Spec.EndpointGroupArn, awsErr.ErrorCode())
+			if awsErr.ErrorCode() == cloudaws.ErrEndpointGroupNotFoundException {
+				copied := obj.DeepCopy()
+				copied.Finalizers = []string{}
+				_, err := c.client.OperatorV1alpha1().EndpointGroupBindings(copied.Namespace).Update(ctx, copied, metav1.UpdateOptions{})
+				if err != nil {
+					klog.Error(err)
+					return reconcile.Result{}, err
+				}
+				return reconcile.Result{}, nil
+			}
+		}
+
 		klog.Error(err)
 		return reconcile.Result{}, err
+
 	}
 	endpointIds := obj.Status.EndpointIds
 	for i := range obj.Status.EndpointIds {

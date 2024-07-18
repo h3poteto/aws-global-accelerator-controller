@@ -25,6 +25,7 @@ const (
 	globalAcceleratorOwnerTagKey       = "aws-global-accelerator-owner"
 	globalAcceleratorTargetHostnameKey = "aws-global-accelerator-target-hostname"
 	globalAcceleratorClusterTagKey     = "aws-global-accelerator-cluster"
+	ErrEndpointGroupNotFoundException  = "EndpointGroupNotFoundException"
 )
 
 func acceleratorOwnerTagValue(resource, ns, name string) string {
