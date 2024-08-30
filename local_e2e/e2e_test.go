@@ -222,7 +222,7 @@ var _ = Describe("E2E", func() {
 
 func waitUntilReady(ctx context.Context, client *kubernetes.Clientset) error {
 	klog.Info("Waiting until kubernetes cluster is ready")
-	err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 		nodeList, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, fmt.Errorf("failed to list nodes: %v", err)
