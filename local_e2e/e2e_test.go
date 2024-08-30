@@ -73,7 +73,7 @@ var _ = BeforeSuite(func() {
 		_ = fixtures.DeleteClusterRole(ctx, cfg)
 	})
 
-	err = wait.Poll(5*time.Second, 2*time.Minute, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
 		deploy, err := kubeClient.AppsV1().Deployments(namespace).Get(ctx, dep.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -156,7 +156,7 @@ var _ = Describe("E2E", func() {
 				hostnames := strings.Split(hostname, ",")
 
 				By("Wait until LoadBalancer is created", func() {
-					err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+					err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 						currentIngress, err := kubeClient.NetworkingV1().Ingresses(namespace).Get(ctx, ingress.Name, metav1.GetOptions{})
 						if err != nil {
 							return false, err
