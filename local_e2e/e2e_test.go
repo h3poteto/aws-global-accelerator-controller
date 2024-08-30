@@ -9,7 +9,7 @@ import (
 	"time"
 
 	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
-	"github.com/h3poteto/aws-global-accelerator-controller/e2e/pkg/fixtures"
+	"github.com/h3poteto/aws-global-accelerator-controller/local_e2e/pkg/fixtures"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 
 	. "github.com/onsi/ginkgo/v2"
