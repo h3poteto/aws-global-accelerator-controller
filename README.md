@@ -14,7 +14,7 @@ AWS Global Accelerator Controller is a controller to manage Global Accelerator f
 
 # Install
 ## Install cert-manager
-This controller uses webhook, so please install [cert-manager](https://cert-manager.io/) at first.
+This controller has a webhook. We recommend you use SSL on your webhooks, install [cert-manager](https://cert-manager.io/) to deploy webhook with SSL.
 
 
 ## Install
