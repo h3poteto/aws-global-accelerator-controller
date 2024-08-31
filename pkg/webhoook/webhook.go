@@ -11,12 +11,22 @@ import (
 	klog "k8s.io/klog/v2"
 )
 
-func Server(tlsCertFile, tlsKeyFile string) {
+func Server(port int32, tlsCertFile, tlsKeyFile string) {
 	http.HandleFunc("/healthz", Healthz)
 	http.HandleFunc("/validate-endpointgroupbinding", ValidateEndpointGroupBinding)
 
-	klog.Infof("Listening on :8443")
-	err := http.ListenAndServeTLS(":8443", tlsCertFile, tlsKeyFile, nil)
+	listen := fmt.Sprintf(":%d", port)
+	ssl := tlsCertFile != "" && tlsKeyFile != ""
+
+	klog.Infof("Listening on %s, SSL is %t", listen, ssl)
+
+	var err error
+	if !ssl {
+		err = http.ListenAndServe(listen, nil)
+	} else {
+		err = http.ListenAndServeTLS(listen, tlsCertFile, tlsKeyFile, nil)
+	}
+
 	if err != nil {
 		klog.Fatalf("Failed to start server: %v", err)
 	}

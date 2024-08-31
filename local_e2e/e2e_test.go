@@ -9,7 +9,7 @@ import (
 	"time"
 
 	gatypes "github.com/aws/aws-sdk-go-v2/service/globalaccelerator/types"
-	"github.com/h3poteto/aws-global-accelerator-controller/e2e/pkg/fixtures"
+	"github.com/h3poteto/aws-global-accelerator-controller/local_e2e/pkg/fixtures"
 	cloudaws "github.com/h3poteto/aws-global-accelerator-controller/pkg/cloudprovider/aws"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -73,7 +73,7 @@ var _ = BeforeSuite(func() {
 		_ = fixtures.DeleteClusterRole(ctx, cfg)
 	})
 
-	err = wait.Poll(5*time.Second, 2*time.Minute, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
 		deploy, err := kubeClient.AppsV1().Deployments(namespace).Get(ctx, dep.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -156,7 +156,7 @@ var _ = Describe("E2E", func() {
 				hostnames := strings.Split(hostname, ",")
 
 				By("Wait until LoadBalancer is created", func() {
-					err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+					err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 						currentIngress, err := kubeClient.NetworkingV1().Ingresses(namespace).Get(ctx, ingress.Name, metav1.GetOptions{})
 						if err != nil {
 							return false, err
@@ -222,7 +222,7 @@ var _ = Describe("E2E", func() {
 
 func waitUntilReady(ctx context.Context, client *kubernetes.Clientset) error {
 	klog.Info("Waiting until kubernetes cluster is ready")
-	err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 		nodeList, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, fmt.Errorf("failed to list nodes: %v", err)
