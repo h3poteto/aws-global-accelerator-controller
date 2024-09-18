@@ -32,7 +32,7 @@ func (c *Route53Controller) processServiceDelete(ctx context.Context, key string
 	if err != nil {
 		return reconcile.Result{}, pkgerrors.NewNoRetryErrorf("invalid resource key: %s", key)
 	}
-	cloud, err := cloudaws.NewAWS("us-west-2")
+	cloud, err := cloudaws.NewAWSWithRoute53ZoneID("us-west-2", c.route53ZoneID)
 	if err != nil {
 		klog.Error(err)
 		return reconcile.Result{}, err
@@ -53,7 +53,7 @@ func (c *Route53Controller) processServiceCreateOrUpdate(ctx context.Context, ob
 
 	hostname, ok := svc.Annotations[apis.Route53HostnameAnnotation]
 	if !ok {
-		cloud, err := cloudaws.NewAWS("us-west-2")
+		cloud, err := cloudaws.NewAWSWithRoute53ZoneID("us-west-2", c.route53ZoneID)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
@@ -84,7 +84,7 @@ func (c *Route53Controller) processServiceCreateOrUpdate(ctx context.Context, ob
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
-			cloud, err := cloudaws.NewAWS(region)
+			cloud, err := cloudaws.NewAWSWithRoute53ZoneID(region, c.route53ZoneID)
 			if err != nil {
 				klog.Error(err)
 				return reconcile.Result{}, err

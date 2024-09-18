@@ -29,12 +29,14 @@ import (
 const controllerAgentName = "route53-controller"
 
 type Route53Config struct {
-	Workers     int
-	ClusterName string
+	Workers       int
+	ClusterName   string
+	Route53ZoneID string
 }
 
 type Route53Controller struct {
 	clusterName   string
+	route53ZoneID string
 	kubeclint     kubernetes.Interface
 	serviceLister corelisters.ServiceLister
 	serviceSynced cache.InformerSynced
@@ -54,11 +56,12 @@ func NewRoute53Controller(kubeclient kubernetes.Interface, informerFactory infor
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Route53Controller{
-		clusterName:  config.ClusterName,
-		kubeclint:    kubeclient,
-		recorder:     recorder,
-		serviceQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),
-		ingressQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-ingress"),
+		clusterName:   config.ClusterName,
+		route53ZoneID: config.Route53ZoneID,
+		kubeclint:     kubeclient,
+		recorder:      recorder,
+		serviceQueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-service"),
+		ingressQueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerAgentName+"-ingress"),
 	}
 	{
 		f := informerFactory.Core().V1().Services()
