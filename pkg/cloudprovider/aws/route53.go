@@ -197,6 +197,13 @@ func (a *AWS) deleteRecord(ctx context.Context, hostedZone *route53types.HostedZ
 }
 
 func (a *AWS) listAllHostedZone(ctx context.Context) ([]route53types.HostedZone, error) {
+	if a.route53ZoneID != "" {
+		hostedZone, err := a.GetHostedZoneByID(ctx, a.route53ZoneID)
+		if err != nil {
+			return nil, err
+		}
+		return []route53types.HostedZone{*hostedZone}, nil
+	}
 	input := &route53.ListHostedZonesInput{
 		MaxItems: aws.Int32(100),
 	}
@@ -333,6 +340,9 @@ func (a *AWS) listRecordSets(ctx context.Context, hostedZoneID *string) ([]route
 }
 
 func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*route53types.HostedZone, error) {
+	if a.route53ZoneID != "" {
+		return a.GetHostedZoneByID(ctx, a.route53ZoneID)
+	}
 	targetHostname := originalHostname
 	for {
 		if targetHostname == "" {
@@ -355,6 +365,17 @@ func (a *AWS) GetHostedZone(ctx context.Context, originalHostname string) (*rout
 		parent := parentDomain(targetHostname)
 		targetHostname = parent
 	}
+}
+
+func (a *AWS) GetHostedZoneByID(ctx context.Context, id string) (*route53types.HostedZone, error) {
+	input := &route53.GetHostedZoneInput{
+		Id: &a.route53ZoneID,
+	}
+	res, err := a.route53.GetHostedZone(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return res.HostedZone, nil
 }
 
 func findARecord(records []route53types.ResourceRecordSet, hostname string) *route53types.ResourceRecordSet {
