@@ -9,7 +9,7 @@ endif
 
 CRD_OPTIONS ?= crd
 CODE_GENERATOR=${GOPATH}/src/k8s.io/code-generator
-CODE_GENERATOR_TAG=v0.29.6
+CODE_GENERATOR_TAG=v0.30.6
 CONTROLLER_TOOLS_TAG=v0.14.0
 BRANCH := $(shell git branch --show-current)
 
@@ -37,10 +37,7 @@ clean:
 	rm -rf $(CODE_GENERATOR)
 
 codegen: code-generator
-	${CODE_GENERATOR}/generate-groups.sh "deepcopy,client,informer,lister" \
-	github.com/h3poteto/aws-global-accelerator-controller/pkg/client github.com/h3poteto/aws-global-accelerator-controller/pkg/apis \
-	endpointgroupbinding:v1alpha1 \
-    -h boilerplate.go.txt
+	CODE_GENERATOR=${CODE_GENERATOR} hack/update-codegen.sh
 
 code-generator:
 ifeq (, $(wildcard ${CODE_GENERATOR}))
