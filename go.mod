@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.43.12
 	github.com/aws/aws-sdk-go-v2/service/globalaccelerator v1.29.15
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.48.7
-	github.com/aws/smithy-go v1.22.2
+	github.com/aws/smithy-go v1.22.3
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/spf13/cobra v1.8.1
