@@ -29,7 +29,7 @@ type FakeOperatorV1alpha1 struct {
 }
 
 func (c *FakeOperatorV1alpha1) EndpointGroupBindings(namespace string) v1alpha1.EndpointGroupBindingInterface {
-	return &FakeEndpointGroupBindings{c, namespace}
+	return newFakeEndpointGroupBindings(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate
