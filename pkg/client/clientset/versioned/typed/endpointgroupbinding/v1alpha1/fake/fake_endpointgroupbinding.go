@@ -19,123 +19,34 @@ limitations under the License.
 package fake
 
 import (
-	"context"
-
 	v1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/endpointgroupbinding/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	endpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/clientset/versioned/typed/endpointgroupbinding/v1alpha1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeEndpointGroupBindings implements EndpointGroupBindingInterface
-type FakeEndpointGroupBindings struct {
+// fakeEndpointGroupBindings implements EndpointGroupBindingInterface
+type fakeEndpointGroupBindings struct {
+	*gentype.FakeClientWithList[*v1alpha1.EndpointGroupBinding, *v1alpha1.EndpointGroupBindingList]
 	Fake *FakeOperatorV1alpha1
-	ns   string
 }
 
-var endpointgroupbindingsResource = v1alpha1.SchemeGroupVersion.WithResource("endpointgroupbindings")
-
-var endpointgroupbindingsKind = v1alpha1.SchemeGroupVersion.WithKind("EndpointGroupBinding")
-
-// Get takes name of the endpointGroupBinding, and returns the corresponding endpointGroupBinding object, and an error if there is any.
-func (c *FakeEndpointGroupBindings) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.EndpointGroupBinding, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(endpointgroupbindingsResource, c.ns, name), &v1alpha1.EndpointGroupBinding{})
-
-	if obj == nil {
-		return nil, err
+func newFakeEndpointGroupBindings(fake *FakeOperatorV1alpha1, namespace string) endpointgroupbindingv1alpha1.EndpointGroupBindingInterface {
+	return &fakeEndpointGroupBindings{
+		gentype.NewFakeClientWithList[*v1alpha1.EndpointGroupBinding, *v1alpha1.EndpointGroupBindingList](
+			fake.Fake,
+			namespace,
+			v1alpha1.SchemeGroupVersion.WithResource("endpointgroupbindings"),
+			v1alpha1.SchemeGroupVersion.WithKind("EndpointGroupBinding"),
+			func() *v1alpha1.EndpointGroupBinding { return &v1alpha1.EndpointGroupBinding{} },
+			func() *v1alpha1.EndpointGroupBindingList { return &v1alpha1.EndpointGroupBindingList{} },
+			func(dst, src *v1alpha1.EndpointGroupBindingList) { dst.ListMeta = src.ListMeta },
+			func(list *v1alpha1.EndpointGroupBindingList) []*v1alpha1.EndpointGroupBinding {
+				return gentype.ToPointerSlice(list.Items)
+			},
+			func(list *v1alpha1.EndpointGroupBindingList, items []*v1alpha1.EndpointGroupBinding) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1alpha1.EndpointGroupBinding), err
-}
-
-// List takes label and field selectors, and returns the list of EndpointGroupBindings that match those selectors.
-func (c *FakeEndpointGroupBindings) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.EndpointGroupBindingList, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewListAction(endpointgroupbindingsResource, endpointgroupbindingsKind, c.ns, opts), &v1alpha1.EndpointGroupBindingList{})
-
-	if obj == nil {
-		return nil, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1alpha1.EndpointGroupBindingList{ListMeta: obj.(*v1alpha1.EndpointGroupBindingList).ListMeta}
-	for _, item := range obj.(*v1alpha1.EndpointGroupBindingList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested endpointGroupBindings.
-func (c *FakeEndpointGroupBindings) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(endpointgroupbindingsResource, c.ns, opts))
-
-}
-
-// Create takes the representation of a endpointGroupBinding and creates it.  Returns the server's representation of the endpointGroupBinding, and an error, if there is any.
-func (c *FakeEndpointGroupBindings) Create(ctx context.Context, endpointGroupBinding *v1alpha1.EndpointGroupBinding, opts v1.CreateOptions) (result *v1alpha1.EndpointGroupBinding, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(endpointgroupbindingsResource, c.ns, endpointGroupBinding), &v1alpha1.EndpointGroupBinding{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.EndpointGroupBinding), err
-}
-
-// Update takes the representation of a endpointGroupBinding and updates it. Returns the server's representation of the endpointGroupBinding, and an error, if there is any.
-func (c *FakeEndpointGroupBindings) Update(ctx context.Context, endpointGroupBinding *v1alpha1.EndpointGroupBinding, opts v1.UpdateOptions) (result *v1alpha1.EndpointGroupBinding, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(endpointgroupbindingsResource, c.ns, endpointGroupBinding), &v1alpha1.EndpointGroupBinding{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.EndpointGroupBinding), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeEndpointGroupBindings) UpdateStatus(ctx context.Context, endpointGroupBinding *v1alpha1.EndpointGroupBinding, opts v1.UpdateOptions) (*v1alpha1.EndpointGroupBinding, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(endpointgroupbindingsResource, "status", c.ns, endpointGroupBinding), &v1alpha1.EndpointGroupBinding{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.EndpointGroupBinding), err
-}
-
-// Delete takes name of the endpointGroupBinding and deletes it. Returns an error if one occurs.
-func (c *FakeEndpointGroupBindings) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(endpointgroupbindingsResource, c.ns, name, opts), &v1alpha1.EndpointGroupBinding{})
-
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeEndpointGroupBindings) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(endpointgroupbindingsResource, c.ns, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1alpha1.EndpointGroupBindingList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched endpointGroupBinding.
-func (c *FakeEndpointGroupBindings) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.EndpointGroupBinding, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(endpointgroupbindingsResource, c.ns, name, pt, data, subresources...), &v1alpha1.EndpointGroupBinding{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.EndpointGroupBinding), err
 }

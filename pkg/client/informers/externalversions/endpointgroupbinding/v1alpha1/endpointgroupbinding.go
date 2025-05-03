@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	endpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/endpointgroupbinding/v1alpha1"
+	apisendpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/apis/endpointgroupbinding/v1alpha1"
 	versioned "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/listers/endpointgroupbinding/v1alpha1"
+	endpointgroupbindingv1alpha1 "github.com/h3poteto/aws-global-accelerator-controller/pkg/client/listers/endpointgroupbinding/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // EndpointGroupBindings.
 type EndpointGroupBindingInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.EndpointGroupBindingLister
+	Lister() endpointgroupbindingv1alpha1.EndpointGroupBindingLister
 }
 
 type endpointGroupBindingInformer struct {
@@ -71,7 +71,7 @@ func NewFilteredEndpointGroupBindingInformer(client versioned.Interface, namespa
 				return client.OperatorV1alpha1().EndpointGroupBindings(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&endpointgroupbindingv1alpha1.EndpointGroupBinding{},
+		&apisendpointgroupbindingv1alpha1.EndpointGroupBinding{},
 		resyncPeriod,
 		indexers,
 	)
@@ -82,9 +82,9 @@ func (f *endpointGroupBindingInformer) defaultInformer(client versioned.Interfac
 }
 
 func (f *endpointGroupBindingInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&endpointgroupbindingv1alpha1.EndpointGroupBinding{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisendpointgroupbindingv1alpha1.EndpointGroupBinding{}, f.defaultInformer)
 }
 
-func (f *endpointGroupBindingInformer) Lister() v1alpha1.EndpointGroupBindingLister {
-	return v1alpha1.NewEndpointGroupBindingLister(f.Informer().GetIndexer())
+func (f *endpointGroupBindingInformer) Lister() endpointgroupbindingv1alpha1.EndpointGroupBindingLister {
+	return endpointgroupbindingv1alpha1.NewEndpointGroupBindingLister(f.Informer().GetIndexer())
 }
