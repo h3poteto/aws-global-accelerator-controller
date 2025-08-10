@@ -10,8 +10,8 @@ on:
 
 env:
   IMAGE_NAME: aws-global-accelerator
-  KIND_VERSION: v0.27.0
-  KUBECTL_VERSION: v1.32.4
+  KIND_VERSION: v0.29.0
+  KUBECTL_VERSION: v1.33.3
 
 jobs:
   e2e-test:
@@ -19,7 +19,7 @@ jobs:
 
     strategy:
       matrix:
-        k8s-version: [1.31.6, 1.32.2]
+        k8s-version: [1.32.5, 1.33.1]
 
     steps:
       - uses: actions/checkout@master
