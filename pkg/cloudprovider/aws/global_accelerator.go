@@ -420,11 +420,18 @@ func (a *AWS) acceleratorChanged(ctx context.Context, accelerator *gatypes.Accel
 		klog.Warning(err)
 		return false
 	}
-	if !tagsContainsAllValues(tags, map[string]string{
+
+	targetTags := map[string]string{
 		globalAcceleratorManagedTagKey:     "true",
 		globalAcceleratorOwnerTagKey:       acceleratorOwnerTagValue(resource, obj.GetNamespace(), obj.GetName()),
 		globalAcceleratorTargetHostnameKey: hostname,
-	}) {
+	}
+	existingTags := acceleratorTags(obj)
+	for _, t := range existingTags {
+		targetTags[*t.Key] = *t.Value
+	}
+
+	if !tagsContainsAllValues(tags, targetTags) {
 		return true
 	}
 	return false
