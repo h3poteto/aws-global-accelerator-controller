@@ -431,11 +431,7 @@ func (a *AWS) acceleratorChanged(ctx context.Context, accelerator *gatypes.Accel
 		targetTags[*t.Key] = *t.Value
 	}
 
-	if !tagsContainsAllValues(tags, targetTags) {
-		return true
-	}
-	return false
-
+	return !tagsContainsAllValues(tags, targetTags)
 }
 
 func listenerProtocolChangedFromService(listener *gatypes.Listener, svc *corev1.Service) bool {
