@@ -42,7 +42,11 @@ clean:
 	rm -rf $(CODE_GENERATOR)
 
 codegen: code-generator
-	CODE_GENERATOR=${CODE_GENERATOR} hack/update-codegen.sh
+	@if command -v asdf >/dev/null 2>&1; then \
+		GOBIN=$$(asdf exec go env GOBIN) CODE_GENERATOR=${CODE_GENERATOR} hack/update-codegen.sh; \
+	else \
+		CODE_GENERATOR=${CODE_GENERATOR} hack/update-codegen.sh; \
+	fi
 
 code-generator:
 ifeq (, $(wildcard ${CODE_GENERATOR}))

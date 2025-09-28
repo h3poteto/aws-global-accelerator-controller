@@ -420,15 +420,18 @@ func (a *AWS) acceleratorChanged(ctx context.Context, accelerator *gatypes.Accel
 		klog.Warning(err)
 		return false
 	}
-	if !tagsContainsAllValues(tags, map[string]string{
+
+	targetTags := map[string]string{
 		globalAcceleratorManagedTagKey:     "true",
 		globalAcceleratorOwnerTagKey:       acceleratorOwnerTagValue(resource, obj.GetNamespace(), obj.GetName()),
 		globalAcceleratorTargetHostnameKey: hostname,
-	}) {
-		return true
 	}
-	return false
+	existingTags := acceleratorTags(obj)
+	for _, t := range existingTags {
+		targetTags[*t.Key] = *t.Value
+	}
 
+	return !tagsContainsAllValues(tags, targetTags)
 }
 
 func listenerProtocolChangedFromService(listener *gatypes.Listener, svc *corev1.Service) bool {
