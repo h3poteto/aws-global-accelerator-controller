@@ -2,7 +2,7 @@ module github.com/h3poteto/aws-global-accelerator-controller
 
 go 1.24.0
 
-toolchain go1.24.5
+toolchain go1.25.1
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.37.2
