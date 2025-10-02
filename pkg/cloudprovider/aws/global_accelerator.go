@@ -211,7 +211,8 @@ func (a *AWS) EnsureGlobalAcceleratorForIngress(
 }
 
 func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2types.LoadBalancer, svc *corev1.Service, clusterName, region string) (*string, error) {
-	accelerator, err := a.createAccelerator(ctx, acceleratorName("service", svc), clusterName, acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName, acceleratorTags(svc))
+	ipAddressType := svc.Annotations[apis.AWSGlobalAcceleratorIpAddressTypeAnnotation]
+	accelerator, err := a.createAccelerator(ctx, acceleratorName("service", svc), clusterName, acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName, ipAddressType, acceleratorTags(svc))
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +232,8 @@ func (a *AWS) createGlobalAcceleratorForService(ctx context.Context, lb *elbv2ty
 }
 
 func (a *AWS) createGlobalAcceleratorForIngress(ctx context.Context, lb *elbv2types.LoadBalancer, ingress *networkingv1.Ingress, clusterName, region string) (*string, error) {
-	accelerator, err := a.createAccelerator(ctx, acceleratorName("ingress", ingress), clusterName, acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName, acceleratorTags(ingress))
+	ipAddressType := ingress.Annotations[apis.AWSGlobalAcceleratorIpAddressTypeAnnotation]
+	accelerator, err := a.createAccelerator(ctx, acceleratorName("ingress", ingress), clusterName, acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName, ipAddressType, acceleratorTags(ingress))
 	if err != nil {
 		return nil, err
 	}
@@ -649,7 +651,7 @@ func (a *AWS) listTagsForAccelerator(ctx context.Context, arn string) ([]gatypes
 	return res.Tags, nil
 }
 
-func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, hostname string, specifiedTags []gatypes.Tag) (*gatypes.Accelerator, error) {
+func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, hostname, ipAddressType string, specifiedTags []gatypes.Tag) (*gatypes.Accelerator, error) {
 	klog.Infof("Creating Global Accelerator %s", name)
 	tags := []gatypes.Tag{
 		gatypes.Tag{
@@ -670,9 +672,23 @@ func (a *AWS) createAccelerator(ctx context.Context, name, clusterName, owner, h
 		},
 	}
 	tags = append(tags, specifiedTags...)
+
+	// Default to DualStack if not specified
+	addrType := gatypes.IpAddressTypeDualStack
+	if ipAddressType != "" {
+		switch ipAddressType {
+		case "ipv4", "IPV4":
+			addrType = gatypes.IpAddressTypeIpv4
+		case "dualstack", "DUAL_STACK":
+			addrType = gatypes.IpAddressTypeDualStack
+		default:
+			klog.Warningf("Unknown IP address type %s, defaulting to DUAL_STACK", ipAddressType)
+		}
+	}
+
 	acceleratorInput := &globalaccelerator.CreateAcceleratorInput{
 		Enabled:       aws.Bool(true),
-		IpAddressType: gatypes.IpAddressTypeIpv4,
+		IpAddressType: addrType,
 		Name:          aws.String(name),
 		Tags:          tags,
 	}
