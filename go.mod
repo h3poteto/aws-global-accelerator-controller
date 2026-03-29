@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.62.5
 	github.com/aws/smithy-go v1.24.2
 	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.0
+	github.com/onsi/gomega v1.39.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
