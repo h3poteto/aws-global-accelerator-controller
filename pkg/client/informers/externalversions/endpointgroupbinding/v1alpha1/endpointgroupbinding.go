@@ -57,7 +57,7 @@ func NewEndpointGroupBindingInformer(client versioned.Interface, namespace strin
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredEndpointGroupBindingInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -82,7 +82,7 @@ func NewFilteredEndpointGroupBindingInformer(client versioned.Interface, namespa
 				}
 				return client.OperatorV1alpha1().EndpointGroupBindings(namespace).Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apisendpointgroupbindingv1alpha1.EndpointGroupBinding{},
 		resyncPeriod,
 		indexers,
