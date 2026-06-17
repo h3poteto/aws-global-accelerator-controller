@@ -1,21 +1,13 @@
 .PHONY: build run clean manifests controller-gen push
 
-# Get the currently used golang install path
-# Use ~/.local/bin for local development if it exists in PATH, otherwise use go bin
-ifneq (,$(and $(findstring $(HOME)/.local/bin,$(PATH)),$(wildcard $(HOME)/.local/bin)))
-GOBIN=$(HOME)/.local/bin
-else
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
-else
-GOBIN=$(shell go env GOBIN)
-endif
-endif
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
 
 CRD_OPTIONS ?= crd
 CODE_GENERATOR=${GOPATH}/src/k8s.io/code-generator
-CODE_GENERATOR_TAG=v0.35.3
-CONTROLLER_TOOLS_TAG=v0.20.0
+CODE_GENERATOR_TAG=v0.36.1
+CONTROLLER_TOOLS_TAG=v0.21.0
 BRANCH := $(shell git branch --show-current)
 
 TARGETOS ?= linux
@@ -58,15 +50,13 @@ manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=global-accelerator-manager-role webhook paths=./... output:crd:artifacts:config=./config/crd/ output:webhook:artifacts:config=./config/webhook/
 
 
-controller-gen:
-ifeq (, $(shell which controller-gen))
+CONTROLLER_GEN=$(LOCALBIN)/controller-gen
+
+controller-gen: $(LOCALBIN)
+ifeq (, $(wildcard $(LOCALBIN)/controller-gen))
 	@echo "controller-gen not found, downloading..."
-	curl -L -o controller-gen https://github.com/kubernetes-sigs/controller-tools/releases/download/${CONTROLLER_TOOLS_TAG}/controller-gen-linux-amd64
-	chmod +x controller-gen
-	mv controller-gen $(GOBIN)/controller-gen
-CONTROLLER_GEN=$(GOBIN)/controller-gen
-else
-CONTROLLER_GEN=$(shell which controller-gen)
+	curl -L -o $(LOCALBIN)/controller-gen https://github.com/kubernetes-sigs/controller-tools/releases/download/${CONTROLLER_TOOLS_TAG}/controller-gen-linux-amd64
+	chmod +x $(LOCALBIN)/controller-gen
 endif
 
 push:
