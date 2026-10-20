@@ -598,8 +598,8 @@ func (a *AWS) RemoveLBFromEdnpointGroup(ctx context.Context, endpointGroup *gaty
 	return nil
 }
 
-func (a *AWS) UpdateEndpointWeight(ctx context.Context, endpointGroup *gatypes.EndpointGroup, endpointId string, weight *int32) error {
-	err := a.updateEndpointWeight(ctx, *endpointGroup.EndpointGroupArn, endpointId, weight)
+func (a *AWS) UpdateEndpoint(ctx context.Context, endpointGroup *gatypes.EndpointGroup, endpointId string, weight *int32, ipPreserve bool) error {
+	err := a.updateEndpoint(ctx, *endpointGroup.EndpointGroupArn, endpointId, weight, ipPreserve)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -928,22 +928,52 @@ func (a *AWS) addEndpoint(ctx context.Context, endpointGroupArn, lbArn string, i
 	return res.EndpointDescriptions[0].EndpointId, nil
 }
 
-func (a *AWS) updateEndpointWeight(ctx context.Context, endpointGroupArn, endpointId string, weight *int32) error {
-	input := &globalaccelerator.UpdateEndpointGroupInput{
-		EndpointGroupArn: aws.String(endpointGroupArn),
-		EndpointConfigurations: []gatypes.EndpointConfiguration{
-			gatypes.EndpointConfiguration{
-				EndpointId: aws.String(endpointId),
-				Weight:     weight,
-			},
-		},
-	}
-	_, err := a.ga.UpdateEndpointGroup(ctx, input)
+func (a *AWS) updateEndpoint(ctx context.Context, endpointGroupArn, endpointId string, weight *int32, ipPreserve bool) error {
+	// UpdateEndpointGroup replaces the whole endpoint list of the group, so describe it again
+	// to include endpoints added since the caller's describe and those owned by other bindings.
+	endpointGroup, err := a.DescribeEndpointGroup(ctx, endpointGroupArn)
 	if err != nil {
 		return err
 	}
-	klog.Infof("Endpoint weight is updated: %s", endpointId)
+	input := &globalaccelerator.UpdateEndpointGroupInput{
+		EndpointGroupArn:       aws.String(endpointGroupArn),
+		EndpointConfigurations: endpointConfigurations(endpointGroup.EndpointDescriptions, endpointId, weight, ipPreserve),
+	}
+	_, err = a.ga.UpdateEndpointGroup(ctx, input)
+	if err != nil {
+		return err
+	}
+	klog.Infof("Endpoint is updated: %s", endpointId)
 	return nil
+}
+
+// endpointConfigurations returns the configuration of every endpoint in the group, keeping the
+// current weight and client IP preservation of the other endpoints and applying the given ones
+// to endpointId. endpointId is appended if it is not in the group yet.
+func endpointConfigurations(current []gatypes.EndpointDescription, endpointId string, weight *int32, ipPreserve bool) []gatypes.EndpointConfiguration {
+	target := gatypes.EndpointConfiguration{
+		EndpointId:                  aws.String(endpointId),
+		Weight:                      weight,
+		ClientIPPreservationEnabled: aws.Bool(ipPreserve),
+	}
+	configs := make([]gatypes.EndpointConfiguration, 0, len(current)+1)
+	found := false
+	for _, e := range current {
+		if aws.ToString(e.EndpointId) == endpointId {
+			configs = append(configs, target)
+			found = true
+			continue
+		}
+		configs = append(configs, gatypes.EndpointConfiguration{
+			EndpointId:                  e.EndpointId,
+			Weight:                      e.Weight,
+			ClientIPPreservationEnabled: e.ClientIPPreservationEnabled,
+		})
+	}
+	if !found {
+		configs = append(configs, target)
+	}
+	return configs
 }
 
 func (a *AWS) removeEndpoint(ctx context.Context, endpointGroupArn, endpointId string) error {
