@@ -487,3 +487,118 @@ func TestListenerForIngress(t *testing.T) {
 		})
 	}
 }
+
+func TestEndpointConfigurations(t *testing.T) {
+	cases := []struct {
+		title      string
+		current    []gatypes.EndpointDescription
+		endpointId string
+		weight     *int32
+		ipPreserve bool
+		expected   []gatypes.EndpointConfiguration
+	}{
+		{
+			title: "Enable client IP preservation on the only endpoint",
+			current: []gatypes.EndpointDescription{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      aws.Int32(128),
+					ClientIPPreservationEnabled: aws.Bool(false),
+					HealthState:                 gatypes.HealthStateHealthy,
+				},
+			},
+			endpointId: "lb-a",
+			weight:     aws.Int32(128),
+			ipPreserve: true,
+			expected: []gatypes.EndpointConfiguration{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      aws.Int32(128),
+					ClientIPPreservationEnabled: aws.Bool(true),
+				},
+			},
+		},
+		{
+			title: "Keep the other endpoints of the group",
+			current: []gatypes.EndpointDescription{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      aws.Int32(100),
+					ClientIPPreservationEnabled: aws.Bool(true),
+				},
+				{
+					EndpointId:                  aws.String("lb-b"),
+					Weight:                      aws.Int32(128),
+					ClientIPPreservationEnabled: aws.Bool(false),
+				},
+			},
+			endpointId: "lb-b",
+			weight:     aws.Int32(50),
+			ipPreserve: true,
+			expected: []gatypes.EndpointConfiguration{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      aws.Int32(100),
+					ClientIPPreservationEnabled: aws.Bool(true),
+				},
+				{
+					EndpointId:                  aws.String("lb-b"),
+					Weight:                      aws.Int32(50),
+					ClientIPPreservationEnabled: aws.Bool(true),
+				},
+			},
+		},
+		{
+			title: "Disable client IP preservation without a weight",
+			current: []gatypes.EndpointDescription{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      aws.Int32(128),
+					ClientIPPreservationEnabled: aws.Bool(true),
+				},
+			},
+			endpointId: "lb-a",
+			weight:     nil,
+			ipPreserve: false,
+			expected: []gatypes.EndpointConfiguration{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      nil,
+					ClientIPPreservationEnabled: aws.Bool(false),
+				},
+			},
+		},
+		{
+			title: "Append the endpoint when it is not in the group",
+			current: []gatypes.EndpointDescription{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      aws.Int32(128),
+					ClientIPPreservationEnabled: aws.Bool(false),
+				},
+			},
+			endpointId: "lb-b",
+			weight:     aws.Int32(0),
+			ipPreserve: true,
+			expected: []gatypes.EndpointConfiguration{
+				{
+					EndpointId:                  aws.String("lb-a"),
+					Weight:                      aws.Int32(128),
+					ClientIPPreservationEnabled: aws.Bool(false),
+				},
+				{
+					EndpointId:                  aws.String("lb-b"),
+					Weight:                      aws.Int32(0),
+					ClientIPPreservationEnabled: aws.Bool(true),
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.title, func(tt *testing.T) {
+			res := endpointConfigurations(c.current, c.endpointId, c.weight, c.ipPreserve)
+			assert.Equal(tt, c.expected, res)
+		})
+	}
+}
