@@ -313,72 +313,24 @@ func (a *AWS) listRelatedGlobalAccelerator(ctx context.Context, arn string) (*ga
 }
 
 func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator *gatypes.Accelerator, lb *elbv2types.LoadBalancer, svc *corev1.Service, region string, clusterName string, manageTags bool) error {
-    if manageTags {
-        if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "service", svc) {
-            if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("service", svc), acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName, acceleratorTags(svc), clusterName); err != nil {
-                klog.Error(err)
-                return err
-            }
-        }
-    }
+	ports, protocol := listenerForService(svc)
+	ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
 
-    if !manageTags {
-        l, err := a.findListenerForLB(ctx, *accelerator.AcceleratorArn, *lb.LoadBalancerArn)
-        if err != nil {
-            var notFoundErr *gatypes.ListenerNotFoundException
-            if errors.As(err, &notFoundErr) {
-                ports, protocol := listenerForService(svc)
-                l, err = a.createListener(ctx, accelerator, ports, protocol)
-                if err != nil {
-                    klog.Error(err)
-                    return err
-                }
-                ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            } else {
-                klog.Error(err)
-                return err
-            }
-        } else {
-            if listenerProtocolChangedFromService(l, svc) || listenerPortChangedFromService(l, svc) {
-                ports, protocol := listenerForService(svc)
-                if _, err := a.updateListener(ctx, l, ports, protocol); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-            endpoint, err := a.GetEndpointGroup(ctx, *l.ListenerArn)
-            if err != nil {
-                var egNotFound *gatypes.EndpointGroupNotFoundException
-                if errors.As(err, &egNotFound) {
-                    ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                    if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                        klog.Error(err)
-                        return err
-                    }
-                } else {
-                    klog.Error(err)
-                    return err
-                }
-            } else if !endpointContainsLB(endpoint, lb) {
-                ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-        }
-        return nil
-    }
+	if !manageTags {
+		return a.syncSharedAcceleratorListener(ctx, accelerator, lb, ports, protocol, region, ipPreserve)
+	}
 
-    listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
+	if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "service", svc) {
+		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("service", svc), acceleratorOwnerTagValue("service", svc.Namespace, svc.Name), *lb.DNSName, acceleratorTags(svc), clusterName); err != nil {
+			klog.Error(err)
+			return err
+		}
+	}
+
+	listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
 	if err != nil {
 		var notFoundErr *gatypes.ListenerNotFoundException
 		if errors.As(err, &notFoundErr) {
-			ports, protocol := listenerForService(svc)
 			listener, err = a.createListener(ctx, accelerator, ports, protocol)
 			if err != nil {
 				klog.Error(err)
@@ -389,141 +341,41 @@ func (a *AWS) updateGlobalAcceleratorForService(ctx context.Context, accelerator
 			return err
 		}
 	}
-    if manageTags {
-        if listenerProtocolChangedFromService(listener, svc) || listenerPortChangedFromService(listener, svc) {
-            klog.Infof("Listener is changed, so updating: %s", *listener.ListenerArn)
-            ports, protocol := listenerForService(svc)
-            listener, err = a.updateListener(ctx, listener, ports, protocol)
-            if err != nil {
-                klog.Error(err)
-                return err
-            }
-        }
-    } else {
-        l, err := a.findListenerForLB(ctx, *accelerator.AcceleratorArn, *lb.LoadBalancerArn)
-        if err != nil {
-            var notFoundErr *gatypes.ListenerNotFoundException
-            if errors.As(err, &notFoundErr) {
-                ports, protocol := listenerForService(svc)
-                l, err = a.createListener(ctx, accelerator, ports, protocol)
-                if err != nil {
-                    klog.Error(err)
-                    return err
-                }
-                ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            } else {
-                klog.Error(err)
-                return err
-            }
-        } else {
-            // Ensure ports match the service definition
-            if listenerProtocolChangedFromService(l, svc) || listenerPortChangedFromService(l, svc) {
-                ports, protocol := listenerForService(svc)
-                if _, err := a.updateListener(ctx, l, ports, protocol); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-            endpoint, err := a.GetEndpointGroup(ctx, *l.ListenerArn)
-            if err != nil {
-                var egNotFound *gatypes.EndpointGroupNotFoundException
-                if errors.As(err, &egNotFound) {
-                    ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                    if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                        klog.Error(err)
-                        return err
-                    }
-                } else {
-                    klog.Error(err)
-                    return err
-                }
-            } else if !endpointContainsLB(endpoint, lb) {
-                ipPreserve := svc.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-        }
-        // Skip further changes via the default listener path
-        return nil
-    }
+	if listenerProtocolChangedFromService(listener, svc) || listenerPortChangedFromService(listener, svc) {
+		klog.Infof("Listener is changed, so updating: %s", *listener.ListenerArn)
+		listener, err = a.updateListener(ctx, listener, ports, protocol)
+		if err != nil {
+			klog.Error(err)
+			return err
+		}
+	}
+	if err := a.syncEndpointGroup(ctx, listener, lb, region, ipPreserve); err != nil {
+		return err
+	}
 
 	klog.Infof("All resources are synced: %s", *accelerator.AcceleratorArn)
 	return nil
 }
 
 func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator *gatypes.Accelerator, lb *elbv2types.LoadBalancer, ingress *networkingv1.Ingress, region string, clusterName string, manageTags bool) error {
-    if manageTags {
-        if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "ingress", ingress) {
-            if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("ingress", ingress), acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName, acceleratorTags(ingress), clusterName); err != nil {
-                klog.Error(err)
-                return err
-            }
-        }
-    }
+	ports, protocol := listenerForIngress(ingress)
+	ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
 
-    if !manageTags {
-        l, err := a.findListenerForLB(ctx, *accelerator.AcceleratorArn, *lb.LoadBalancerArn)
-        if err != nil {
-            var notFoundErr *gatypes.ListenerNotFoundException
-            if errors.As(err, &notFoundErr) {
-                ports, protocol := listenerForIngress(ingress)
-                l, err = a.createListener(ctx, accelerator, ports, protocol)
-                if err != nil {
-                    klog.Error(err)
-                    return err
-                }
-                ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            } else {
-                klog.Error(err)
-                return err
-            }
-        } else {
-            if listenerProtocolChangedFromIngress(l, ingress) || listenerPortChangedFromIngress(l, ingress) {
-                ports, protocol := listenerForIngress(ingress)
-                if _, err := a.updateListener(ctx, l, ports, protocol); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-            endpoint, err := a.GetEndpointGroup(ctx, *l.ListenerArn)
-            if err != nil {
-                var egNotFound *gatypes.EndpointGroupNotFoundException
-                if errors.As(err, &egNotFound) {
-                    ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                    if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                        klog.Error(err)
-                        return err
-                    }
-                } else {
-                    klog.Error(err)
-                    return err
-                }
-            } else if !endpointContainsLB(endpoint, lb) {
-                ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-        }
-        return nil
-    }
+	if !manageTags {
+		return a.syncSharedAcceleratorListener(ctx, accelerator, lb, ports, protocol, region, ipPreserve)
+	}
 
-    listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
+	if a.acceleratorChanged(ctx, accelerator, *lb.DNSName, "ingress", ingress) {
+		if _, err := a.updateAccelerator(ctx, accelerator.AcceleratorArn, acceleratorName("ingress", ingress), acceleratorOwnerTagValue("ingress", ingress.Namespace, ingress.Name), *lb.DNSName, acceleratorTags(ingress), clusterName); err != nil {
+			klog.Error(err)
+			return err
+		}
+	}
+
+	listener, err := a.GetListener(ctx, *accelerator.AcceleratorArn)
 	if err != nil {
 		var notFoundErr *gatypes.ListenerNotFoundException
 		if errors.As(err, &notFoundErr) {
-			ports, protocol := listenerForIngress(ingress)
 			listener, err = a.createListener(ctx, accelerator, ports, protocol)
 			if err != nil {
 				klog.Error(err)
@@ -534,70 +386,105 @@ func (a *AWS) updateGlobalAcceleratorForIngress(ctx context.Context, accelerator
 			return err
 		}
 	}
-    if manageTags {
-        if listenerProtocolChangedFromIngress(listener, ingress) || listenerPortChangedFromIngress(listener, ingress) {
-            klog.Infof("Listener is changed, so updating: %s", *listener.ListenerArn)
-            ports, protocol := listenerForIngress(ingress)
-            listener, err = a.updateListener(ctx, listener, ports, protocol)
-            if err != nil {
-                klog.Error(err)
-                return err
-            }
-        }
-    } else {
-        l, err := a.findListenerForLB(ctx, *accelerator.AcceleratorArn, *lb.LoadBalancerArn)
-        if err != nil {
-            var notFoundErr *gatypes.ListenerNotFoundException
-            if errors.As(err, &notFoundErr) {
-                ports, protocol := listenerForIngress(ingress)
-                l, err = a.createListener(ctx, accelerator, ports, protocol)
-                if err != nil {
-                    klog.Error(err)
-                    return err
-                }
-                ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            } else {
-                klog.Error(err)
-                return err
-            }
-        } else {
-            if listenerProtocolChangedFromIngress(l, ingress) || listenerPortChangedFromIngress(l, ingress) {
-                ports, protocol := listenerForIngress(ingress)
-                if _, err := a.updateListener(ctx, l, ports, protocol); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-            endpoint, err := a.GetEndpointGroup(ctx, *l.ListenerArn)
-            if err != nil {
-                var egNotFound *gatypes.EndpointGroupNotFoundException
-                if errors.As(err, &egNotFound) {
-                    ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                    if _, err := a.createEndpointGroup(ctx, l, lb.LoadBalancerArn, region, ipPreserve); err != nil {
-                        klog.Error(err)
-                        return err
-                    }
-                } else {
-                    klog.Error(err)
-                    return err
-                }
-            } else if !endpointContainsLB(endpoint, lb) {
-                ipPreserve := ingress.Annotations[apis.ClientIPPreservationAnnotation] == "true"
-                if _, err := a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn, ipPreserve); err != nil {
-                    klog.Error(err)
-                    return err
-                }
-            }
-        }
-        return nil
-    }
+	if listenerProtocolChangedFromIngress(listener, ingress) || listenerPortChangedFromIngress(listener, ingress) {
+		klog.Infof("Listener is changed, so updating: %s", *listener.ListenerArn)
+		listener, err = a.updateListener(ctx, listener, ports, protocol)
+		if err != nil {
+			klog.Error(err)
+			return err
+		}
+	}
+	if err := a.syncEndpointGroup(ctx, listener, lb, region, ipPreserve); err != nil {
+		return err
+	}
 
 	klog.Infof("All resources are synced: %s", *accelerator.AcceleratorArn)
 	return nil
+}
+
+// syncSharedAcceleratorListener keeps one listener of a shared accelerator (one
+// created outside this controller, e.g. by Terraform) pointed at lb.
+//
+// The listener is first looked up by the load balancer it targets. When the
+// Service or Ingress gets a new load balancer, no listener targets the new ARN
+// yet, so the listener is then looked up by its ports and protocol. Global
+// Accelerator does not allow two listeners of one protocol to share a port, so
+// that listener belongs to this Service or Ingress; its endpoint group is
+// switched to the new load balancer. A new listener is created only when no
+// listener uses any of the ports.
+func (a *AWS) syncSharedAcceleratorListener(ctx context.Context, accelerator *gatypes.Accelerator, lb *elbv2types.LoadBalancer, ports []int32, protocol gatypes.Protocol, region string, ipPreserve bool) error {
+	listener, err := a.findListenerForLB(ctx, *accelerator.AcceleratorArn, *lb.LoadBalancerArn)
+	var notFoundErr *gatypes.ListenerNotFoundException
+	if errors.As(err, &notFoundErr) {
+		listener, err = a.findListenerForPorts(ctx, *accelerator.AcceleratorArn, ports, protocol)
+		if err == nil {
+			klog.Infof("No listener targets %s; using listener %s, which has the same %s ports %v", *lb.LoadBalancerArn, *listener.ListenerArn, protocol, ports)
+		}
+	}
+	if errors.As(err, &notFoundErr) {
+		listener, err = a.createListener(ctx, accelerator, ports, protocol)
+		if err != nil {
+			klog.Error(err)
+			return err
+		}
+		if _, err := a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve); err != nil {
+			klog.Error(err)
+			return err
+		}
+		return nil
+	}
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+
+	if listener.Protocol != protocol || listenerPortsChanged(listener, ports) {
+		klog.Infof("Listener is changed, so updating: %s", *listener.ListenerArn)
+		listener, err = a.updateListener(ctx, listener, ports, protocol)
+		if err != nil {
+			klog.Error(err)
+			return err
+		}
+	}
+	return a.syncEndpointGroup(ctx, listener, lb, region, ipPreserve)
+}
+
+// syncEndpointGroup makes lb the endpoint of the listener's endpoint group,
+// creating the group if it is missing. Endpoints for other load balancers,
+// such as the one a recreated Service had before, are replaced.
+func (a *AWS) syncEndpointGroup(ctx context.Context, listener *gatypes.Listener, lb *elbv2types.LoadBalancer, region string, ipPreserve bool) error {
+	endpoint, err := a.GetEndpointGroup(ctx, *listener.ListenerArn)
+	if err != nil {
+		var notFoundErr *gatypes.EndpointGroupNotFoundException
+		if errors.As(err, &notFoundErr) {
+			if _, err := a.createEndpointGroup(ctx, listener, lb.LoadBalancerArn, region, ipPreserve); err != nil {
+				klog.Error(err)
+				return err
+			}
+			return nil
+		}
+		klog.Error(err)
+		return err
+	}
+	if endpointContainsLB(endpoint, lb) {
+		return nil
+	}
+	klog.Infof("Endpoint Group %s targets %v, so replacing with %s", *endpoint.EndpointGroupArn, endpointIDs(endpoint), *lb.LoadBalancerArn)
+	if _, err := a.updateEndpointGroup(ctx, endpoint, lb.LoadBalancerArn, ipPreserve); err != nil {
+		klog.Error(err)
+		return err
+	}
+	return nil
+}
+
+func endpointIDs(endpoint *gatypes.EndpointGroup) []string {
+	ids := []string{}
+	for _, d := range endpoint.EndpointDescriptions {
+		if d.EndpointId != nil {
+			ids = append(ids, *d.EndpointId)
+		}
+	}
+	return ids
 }
 
 func (a *AWS) tagExistingAcceleratorUse(ctx context.Context, arn string) error {
@@ -1099,6 +986,62 @@ func (a *AWS) findListenerForLB(ctx context.Context, acceleratorArn string, lbAr
         }
     }
     return nil, &gatypes.ListenerNotFoundException{}
+}
+
+// findListenerForPorts returns the listener with the given protocol whose
+// port ranges include any of ports. More than one such listener is an error,
+// because the ports would then be split across listeners this controller
+// cannot reconcile safely.
+func (a *AWS) findListenerForPorts(ctx context.Context, acceleratorArn string, ports []int32, protocol gatypes.Protocol) (*gatypes.Listener, error) {
+	input := &globalaccelerator.ListListenersInput{
+		AcceleratorArn: aws.String(acceleratorArn),
+		MaxResults:     aws.Int32(100),
+	}
+	listeners := []gatypes.Listener{}
+	paginator := globalaccelerator.NewListListenersPaginator(a.ga, input)
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		listeners = append(listeners, output.Listeners...)
+	}
+	return selectListenerForPorts(listeners, ports, protocol)
+}
+
+func selectListenerForPorts(listeners []gatypes.Listener, ports []int32, protocol gatypes.Protocol) (*gatypes.Listener, error) {
+	var matched []gatypes.Listener
+	for _, l := range listeners {
+		if l.Protocol == protocol && listenerUsesAnyPort(&l, ports) {
+			matched = append(matched, l)
+		}
+	}
+	switch len(matched) {
+	case 0:
+		return nil, &gatypes.ListenerNotFoundException{}
+	case 1:
+		return &matched[0], nil
+	default:
+		arns := make([]string, 0, len(matched))
+		for _, l := range matched {
+			arns = append(arns, aws.ToString(l.ListenerArn))
+		}
+		return nil, fmt.Errorf("%s ports %v are used by %d listeners: %v", protocol, ports, len(matched), arns)
+	}
+}
+
+func listenerUsesAnyPort(listener *gatypes.Listener, ports []int32) bool {
+	for _, pr := range listener.PortRanges {
+		if pr.FromPort == nil || pr.ToPort == nil {
+			continue
+		}
+		for _, p := range ports {
+			if p >= *pr.FromPort && p <= *pr.ToPort {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *AWS) createListener(ctx context.Context, accelerator *gatypes.Accelerator, ports []int32, protocol gatypes.Protocol) (*gatypes.Listener, error) {

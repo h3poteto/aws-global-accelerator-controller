@@ -136,6 +136,8 @@ Behavior when `global-accelerator-id` is set:
 - The controller binds the resource's Load Balancer as an endpoint to the specified Accelerator.
 - The controller does not rename the Accelerator and does not modify ownership/hostname tags; it only adds a uniform tag `aws-global-accelerator-controller-used=true` to indicate usage.
 - Route53 management is skipped; DNS/hostnames should be managed externally for the existing Accelerator.
+- Each Service or Ingress gets its own listener, found by the Load Balancer it targets or, after the Load Balancer is replaced (e.g. the Service was recreated), by its ports and protocol. The endpoint group is then switched to the new Load Balancer. If the ports are spread over more than one listener of the same protocol, the controller reports an error instead of guessing.
+- Deleting the Service or Ingress leaves its listener in place; recreating it reuses that listener.
 
 This allows sharing a single Accelerator across multiple Services/Ingresses without tag conflicts.
 
