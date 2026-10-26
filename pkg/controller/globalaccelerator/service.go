@@ -103,7 +103,14 @@ func (c *GlobalAcceleratorController) processServiceCreateOrUpdate(ctx context.C
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
-			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &lbIngress, c.clusterName, name, region)
+
+			existingArn := ""
+            if _, ok := svc.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; ok {
+                if annArn, hasArn := svc.Annotations[apis.AWSGlobalAcceleratorIDAnnotation]; hasArn && annArn != "" {
+                    existingArn = annArn
+                }
+            }
+            arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForService(ctx, svc, &lbIngress, c.clusterName, name, region, existingArn)
 			if err != nil {
 				return reconcile.Result{}, err
 			}

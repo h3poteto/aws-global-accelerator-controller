@@ -89,6 +89,13 @@ func (c *Route53Controller) processServiceCreateOrUpdate(ctx context.Context, ob
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
+			// Skip Route53 if binding to existing GA via annotation; hostname is assumed external
+			if _, hasManaged := svc.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; hasManaged {
+				if annArn, ok := svc.Annotations[apis.AWSGlobalAcceleratorIDAnnotation]; ok && annArn != "" {
+					klog.Infof("Skipping Route53 management for %s/%s due to existing GA binding", svc.Namespace, svc.Name)
+					continue
+				}
+			}
 			created, retryAfter, err := cloud.EnsureRoute53ForService(ctx, svc, &lbIngress, hostnames, c.clusterName)
 			if err != nil {
 				return reconcile.Result{}, err

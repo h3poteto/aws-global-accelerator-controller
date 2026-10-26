@@ -7,6 +7,7 @@ const (
 	AWSGlobalAcceleratorNameAnnotation          = "aws-global-accelerator-controller.h3poteto.dev/global-accelerator-name"
 	AWSGlobalAcceleratorTagsAnnotation          = "aws-global-accelerator-controller.h3poteto.dev/global-accelerator-tags"
 	AWSGlobalAcceleratorIpAddressTypeAnnotation = "aws-global-accelerator-controller.h3poteto.dev/ip-address-type"
+	AWSGlobalAcceleratorIDAnnotation            = "aws-global-accelerator-controller.h3poteto.dev/global-accelerator-id"
 
 	AWSLoadBalancerTypeAnnotation = "service.beta.kubernetes.io/aws-load-balancer-type"
 	IngressClassAnnotation        = "kubernetes.io/ingress.class"
