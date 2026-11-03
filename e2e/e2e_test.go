@@ -96,6 +96,16 @@ var _ = Describe("E2E", func() {
 		_, err = ownClient.OperatorV1alpha1().EndpointGroupBindings(current.Namespace).Update(context.Background(), current, metav1.UpdateOptions{})
 		Expect(err).ShouldNot(HaveOccurred())
 	})
+	It("Changing client IP preservation", func() {
+		resource := fixture.EndpointGroupBinding(false, "example", utilpointer.Int32(100), "arn:aws:globalaccelerator::123456789012:accelerator/1234abcd-abcd-1234-abcd-1234abcd1234")
+		_, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Create(context.Background(), &resource, metav1.CreateOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+		current, err := ownClient.OperatorV1alpha1().EndpointGroupBindings(resourceNS).Get(context.Background(), resource.Name, metav1.GetOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+		current.Spec.ClientIPPreservation = true
+		_, err = ownClient.OperatorV1alpha1().EndpointGroupBindings(current.Namespace).Update(context.Background(), current, metav1.UpdateOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+	})
 
 })
 
