@@ -496,6 +496,7 @@ func TestEndpointConfigurations(t *testing.T) {
 		weight     *int32
 		ipPreserve bool
 		expected   []gatypes.EndpointConfiguration
+		expectErr  bool
 	}{
 		{
 			title: "Enable client IP preservation on the only endpoint",
@@ -569,7 +570,7 @@ func TestEndpointConfigurations(t *testing.T) {
 			},
 		},
 		{
-			title: "Append the endpoint when it is not in the group",
+			title: "Return an error when the endpoint is not in the group",
 			current: []gatypes.EndpointDescription{
 				{
 					EndpointId:                  aws.String("lb-a"),
@@ -580,24 +581,18 @@ func TestEndpointConfigurations(t *testing.T) {
 			endpointId: "lb-b",
 			weight:     aws.Int32(0),
 			ipPreserve: true,
-			expected: []gatypes.EndpointConfiguration{
-				{
-					EndpointId:                  aws.String("lb-a"),
-					Weight:                      aws.Int32(128),
-					ClientIPPreservationEnabled: aws.Bool(false),
-				},
-				{
-					EndpointId:                  aws.String("lb-b"),
-					Weight:                      aws.Int32(0),
-					ClientIPPreservationEnabled: aws.Bool(true),
-				},
-			},
+			expectErr:  true,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.title, func(tt *testing.T) {
-			res := endpointConfigurations(c.current, c.endpointId, c.weight, c.ipPreserve)
+			res, err := endpointConfigurations(c.current, c.endpointId, c.weight, c.ipPreserve)
+			if c.expectErr {
+				assert.Error(tt, err)
+				return
+			}
+			assert.NoError(tt, err)
 			assert.Equal(tt, c.expected, res)
 		})
 	}

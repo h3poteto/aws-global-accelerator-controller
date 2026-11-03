@@ -935,9 +935,13 @@ func (a *AWS) updateEndpoint(ctx context.Context, endpointGroupArn, endpointId s
 	if err != nil {
 		return err
 	}
+	configs, err := endpointConfigurations(endpointGroup.EndpointDescriptions, endpointId, weight, ipPreserve)
+	if err != nil {
+		return fmt.Errorf("%w in endpoint group %s", err, endpointGroupArn)
+	}
 	input := &globalaccelerator.UpdateEndpointGroupInput{
 		EndpointGroupArn:       aws.String(endpointGroupArn),
-		EndpointConfigurations: endpointConfigurations(endpointGroup.EndpointDescriptions, endpointId, weight, ipPreserve),
+		EndpointConfigurations: configs,
 	}
 	_, err = a.ga.UpdateEndpointGroup(ctx, input)
 	if err != nil {
@@ -949,14 +953,14 @@ func (a *AWS) updateEndpoint(ctx context.Context, endpointGroupArn, endpointId s
 
 // endpointConfigurations returns the configuration of every endpoint in the group, keeping the
 // current weight and client IP preservation of the other endpoints and applying the given ones
-// to endpointId. endpointId is appended if it is not in the group yet.
-func endpointConfigurations(current []gatypes.EndpointDescription, endpointId string, weight *int32, ipPreserve bool) []gatypes.EndpointConfiguration {
+// to endpointId. It returns an error if endpointId is not in the group.
+func endpointConfigurations(current []gatypes.EndpointDescription, endpointId string, weight *int32, ipPreserve bool) ([]gatypes.EndpointConfiguration, error) {
 	target := gatypes.EndpointConfiguration{
 		EndpointId:                  aws.String(endpointId),
 		Weight:                      weight,
 		ClientIPPreservationEnabled: aws.Bool(ipPreserve),
 	}
-	configs := make([]gatypes.EndpointConfiguration, 0, len(current)+1)
+	configs := make([]gatypes.EndpointConfiguration, 0, len(current))
 	found := false
 	for _, e := range current {
 		if aws.ToString(e.EndpointId) == endpointId {
@@ -971,9 +975,9 @@ func endpointConfigurations(current []gatypes.EndpointDescription, endpointId st
 		})
 	}
 	if !found {
-		configs = append(configs, target)
+		return nil, fmt.Errorf("endpoint %s is not found", endpointId)
 	}
-	return configs
+	return configs, nil
 }
 
 func (a *AWS) removeEndpoint(ctx context.Context, endpointGroupArn, endpointId string) error {
