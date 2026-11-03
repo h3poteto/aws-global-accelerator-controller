@@ -125,6 +125,22 @@ spec:
               number: 80
 ```
 
+## Use an existing Global Accelerator (annotation)
+If you want to bind a Service or Ingress to an existing Global Accelerator managed outside the controller, set both the managed annotation and the following annotation with your Accelerator ARN:
+
+```yaml
+aws-global-accelerator-controller.h3poteto.dev/global-accelerator-id: "arn:aws:globalaccelerator:...:accelerator/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+```
+
+Behavior when `global-accelerator-id` is set:
+- The controller binds the resource's Load Balancer as an endpoint to the specified Accelerator.
+- The controller does not rename the Accelerator and does not modify ownership/hostname tags; it only adds a uniform tag `aws-global-accelerator-controller-used=true` to indicate usage.
+- Route53 management is skipped; DNS/hostnames should be managed externally for the existing Accelerator.
+- Each Service or Ingress gets its own listener, found by the Load Balancer it targets or, after the Load Balancer is replaced (e.g. the Service was recreated), by its ports and protocol. The endpoint group is then switched to the new Load Balancer. If the ports are spread over more than one listener of the same protocol, the controller reports an error instead of guessing.
+- Deleting the Service or Ingress leaves its listener in place; recreating it reuses that listener.
+
+This allows sharing a single Accelerator across multiple Services/Ingresses without tag conflicts.
+
 ## Create route53 records associated with the Global Accelerator
 Please add an annotation `aws-global-accelerator-controller.h3poteto.dev/route53-hostname` in addition to `global-accelerator-managed` annotation. And specify your hostname to the annotation.
 
@@ -239,6 +255,7 @@ Annotations for service or ingress resources.
 |`aws-global-accelerator-controller.h3poteto.dev/client-ip-preservation`| `true` | false |
 |`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-name`|accelerator-name| automatically generated|
 |`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-tags`|`Name=value,Env=foo`| `""` |
+|`aws-global-accelerator-controller.h3poteto.dev/global-accelerator-id`|existing Accelerator ARN| unset |
 
 # Development
 ```

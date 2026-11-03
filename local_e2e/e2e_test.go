@@ -144,6 +144,67 @@ var _ = Describe("E2E", func() {
 					Expect(err).ShouldNot(HaveOccurred())
 				})
 			})
+
+			It("Binds to existing Global Accelerator when ID annotation is set", func() {
+				ctx := context.Background()
+				existingArn := os.Getenv("E2E_EXISTING_GA_ARN")
+				if existingArn == "" {
+					Skip("E2E_EXISTING_GA_ARN is not set; skipping existing GA binding test")
+				}
+
+				svc := fixtures.NewNLBService(namespace, "e2e-test-existing", hostname)
+				svc.Annotations["aws-global-accelerator-controller.h3poteto.dev/global-accelerator-id"] = existingArn
+				svc, err := kubeClient.CoreV1().Services(namespace).Create(ctx, svc, metav1.CreateOptions{})
+				Expect(err).ShouldNot(HaveOccurred())
+
+				hostnames := strings.Split(hostname, ",")
+
+				By("Wait until LoadBalancer is created", func() {
+					err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+						currentService, err := kubeClient.CoreV1().Services(namespace).Get(ctx, svc.Name, metav1.GetOptions{})
+						if err != nil {
+							return false, err
+						}
+						if len(currentService.Status.LoadBalancer.Ingress) > 0 {
+							return true, nil
+						}
+						klog.Infof("%s/%s does not have loadBalancer yet", currentService.Namespace, currentService.Name)
+						return false, nil
+					})
+					Expect(err).ShouldNot(HaveOccurred())
+				})
+
+				svc, err = kubeClient.CoreV1().Services(svc.Namespace).Get(ctx, svc.Name, metav1.GetOptions{})
+				Expect(err).ShouldNot(HaveOccurred())
+
+				lbName, region, err := cloudaws.GetLBNameFromHostname(svc.Status.LoadBalancer.Ingress[0].Hostname)
+				Expect(err).ShouldNot(HaveOccurred())
+				cloud, err := cloudaws.NewAWS(region)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				DeferCleanup(func() error {
+					kubeClient.CoreV1().Services(svc.Namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
+					err = waitUntilCleanup(cloud, hostnames, clusterName, "service", svc)
+					return err
+				})
+
+				By("Wait until Global Accelerator is bound", func() {
+					err = waitUntilGlobalAccelerator(cloud, lbName, clusterName, "service", svc)
+					Expect(err).ShouldNot(HaveOccurred())
+				})
+
+				By("Wait until Route53 record is created", func() {
+					err = waitUntilRoute53(cloud, hostnames, svc.Status.LoadBalancer.Ingress[0].Hostname, clusterName, "service", svc)
+					Expect(err).ShouldNot(HaveOccurred())
+				})
+
+				By("Remove resources", func() {
+					err := kubeClient.CoreV1().Services(svc.Namespace).Delete(ctx, svc.Name, metav1.DeleteOptions{})
+					Expect(err).ShouldNot(HaveOccurred())
+					err = waitUntilCleanup(cloud, hostnames, clusterName, "service", svc)
+					Expect(err).ShouldNot(HaveOccurred())
+				})
+			})
 		})
 
 		Context("Ingress Load Balancer", func() {

@@ -81,6 +81,12 @@ func (c *Route53Controller) processIngressCreateOrUpdate(ctx context.Context, ob
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
+			if _, hasManaged := ingress.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; hasManaged {
+				if annArn, ok := ingress.Annotations[apis.AWSGlobalAcceleratorIDAnnotation]; ok && annArn != "" {
+					klog.Infof("Skipping Route53 management for %s/%s due to existing GA binding", ingress.Namespace, ingress.Name)
+					continue
+				}
+			}
 			created, retryAfter, err := cloud.EnsureRoute53ForIngress(ctx, ingress, &lbIngress, hostnames, c.clusterName)
 			if err != nil {
 				return reconcile.Result{}, err

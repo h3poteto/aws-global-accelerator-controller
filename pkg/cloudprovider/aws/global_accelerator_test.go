@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -484,6 +485,62 @@ func TestListenerForIngress(t *testing.T) {
 			ports, protocol := listenerForIngress(c.ingress)
 			assert.Equal(tt, c.expectedPorts, ports)
 			assert.Equal(tt, c.expectedProtocol, protocol)
+		})
+	}
+}
+
+func TestSelectListenerForPorts(t *testing.T) {
+	listener := func(arn string, protocol gatypes.Protocol, ports ...int32) gatypes.Listener {
+		l := gatypes.Listener{ListenerArn: aws.String(arn), Protocol: protocol}
+		for _, p := range ports {
+			l.PortRanges = append(l.PortRanges, gatypes.PortRange{FromPort: aws.Int32(p), ToPort: aws.Int32(p)})
+		}
+		return l
+	}
+	// Mirrors a shared accelerator where TCP and UDP listeners reuse port numbers.
+	listeners := []gatypes.Listener{
+		listener("nginx", gatypes.ProtocolTcp, 8080, 8443, 9443),
+		listener("update-status", gatypes.ProtocolUdp, 8080),
+		listener("sia-tcp", gatypes.ProtocolTcp, 5001),
+		listener("sia-udp", gatypes.ProtocolUdp, 5001),
+		{
+			ListenerArn: aws.String("range"),
+			Protocol:    gatypes.ProtocolTcp,
+			PortRanges:  []gatypes.PortRange{{FromPort: aws.Int32(1303), ToPort: aws.Int32(1306)}},
+		},
+	}
+
+	cases := []struct {
+		title       string
+		ports       []int32
+		protocol    gatypes.Protocol
+		expectedArn string
+		notFound    bool
+		ambiguous   bool
+	}{
+		{title: "exact ports", ports: []int32{8080, 8443, 9443}, protocol: gatypes.ProtocolTcp, expectedArn: "nginx"},
+		{title: "same port on other protocol", ports: []int32{8080}, protocol: gatypes.ProtocolUdp, expectedArn: "update-status"},
+		{title: "service added a port", ports: []int32{5001, 5002}, protocol: gatypes.ProtocolTcp, expectedArn: "sia-tcp"},
+		{title: "port inside a range", ports: []int32{1305}, protocol: gatypes.ProtocolTcp, expectedArn: "range"},
+		{title: "no listener uses the ports", ports: []int32{9505}, protocol: gatypes.ProtocolTcp, notFound: true},
+		{title: "ports split across listeners", ports: []int32{5001, 8443}, protocol: gatypes.ProtocolTcp, ambiguous: true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.title, func(t *testing.T) {
+			l, err := selectListenerForPorts(listeners, c.ports, c.protocol)
+			switch {
+			case c.notFound:
+				var notFoundErr *gatypes.ListenerNotFoundException
+				assert.ErrorAs(t, err, &notFoundErr)
+			case c.ambiguous:
+				assert.Error(t, err)
+				var notFoundErr *gatypes.ListenerNotFoundException
+				assert.False(t, errors.As(err, &notFoundErr))
+			default:
+				assert.NoError(t, err)
+				assert.Equal(t, c.expectedArn, aws.ToString(l.ListenerArn))
+			}
 		})
 	}
 }

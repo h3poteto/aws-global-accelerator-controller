@@ -107,7 +107,14 @@ func (c *GlobalAcceleratorController) processIngressCreateOrUpdate(ctx context.C
 				klog.Error(err)
 				return reconcile.Result{}, err
 			}
-			arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, c.clusterName, name, region)
+
+			existingArn := ""
+            if _, ok := ingress.Annotations[apis.AWSGlobalAcceleratorManagedAnnotation]; ok {
+                if annArn, hasArn := ingress.Annotations[apis.AWSGlobalAcceleratorIDAnnotation]; hasArn && annArn != "" {
+                    existingArn = annArn
+                }
+            }
+            arn, created, retryAfter, err := cloud.EnsureGlobalAcceleratorForIngress(ctx, ingress, &lbIngress, c.clusterName, name, region, existingArn)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
