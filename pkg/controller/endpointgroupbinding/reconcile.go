@@ -194,9 +194,9 @@ func (c *EndpointGroupBindingController) reconcileUpdate(ctx context.Context, ob
 		}
 	}
 
-	// Check weight of the endpoint
+	// Apply weight and client IP preservation to the endpoints
 	for id, _ := range arns {
-		err := regionalCloud.UpdateEndpointWeight(ctx, endpointGroup, id, obj.Spec.Weight)
+		err := regionalCloud.UpdateEndpoint(ctx, endpointGroup, id, obj.Spec.Weight, obj.Spec.ClientIPPreservation)
 		if err != nil {
 			klog.Error(err)
 			return reconcile.Result{}, err
